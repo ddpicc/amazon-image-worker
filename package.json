@@ -5,8 +5,10 @@
   "scripts": {
     "build": "prisma generate --schema prisma/schema.prisma",
     "build:web": "next build",
-    "start": "tsx src/worker/image-generation-worker.ts",
+    "postbuild": "echo 'Build complete'",
+    "start": "bash scripts/start-web.sh",
     "start:web": "next start -p 3001",
+    "start:worker": "tsx src/worker/image-generation-worker.ts",
     "dev": "tsx watch src/worker/image-generation-worker.ts",
     "dev:web": "next dev -p 3001",
     "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",

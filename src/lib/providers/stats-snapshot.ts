@@ -5,7 +5,8 @@ import { prisma } from '../db/prisma'
  * Called periodically (every 15 minutes) from the worker process.
  */
 export async function snapshotProviderStats(): Promise<void> {
-  const providers = await prisma.imageProvider.findMany({
+  try {
+    const providers = await prisma.imageProvider.findMany({
     select: { id: true },
   })
 
@@ -61,4 +62,8 @@ export async function snapshotProviderStats(): Promise<void> {
   })
 
   console.info(`[StatsSnapshot] Snapshoted ${providers.length} providers, cleaned up old records`)
+  } catch (error) {
+    // Gracefully handle case where tables don't exist yet (first deploy)
+    console.warn(`[StatsSnapshot] Skipped (database not ready): ${error instanceof Error ? error.message : String(error)}`)
+  }
 }

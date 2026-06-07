@@ -1,14 +1,16 @@
 #!/bin/bash
 set -e
 
-# Run database migrations on startup (first deploy creates tables)
-npx prisma migrate deploy --schema prisma/schema.prisma 2>/dev/null || npx prisma db push --accept-data-loss --schema prisma/schema.prisma
+echo "[startup] Syncing database schema..."
+npx prisma db push --accept-data-loss --schema prisma/schema.prisma 2>&1 || {
+  echo "[startup] WARNING: Database push failed, tables may not exist yet"
+}
 
 # Start the appropriate service
 if [ "$SERVICE_ROLE" = "worker" ]; then
-  echo "Starting Worker..."
+  echo "[startup] Starting Worker..."
   exec npx tsx src/worker/image-generation-worker.ts
 else
-  echo "Starting Web Server..."
+  echo "[startup] Starting Web Server..."
   exec node server.js
 fi
