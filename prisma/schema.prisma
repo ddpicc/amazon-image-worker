@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum GenerationStatus {
+  STARTED
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+enum AttemptStatus {
+  STARTED
+  SUCCEEDED
+  FAILED
+}
+
+enum UpstreamApiKind {
+  UNKNOWN
+  IMAGES_EDIT
+  IMAGES_GENERATE
+}
+
+enum AiOperationKind {
+  IMAGE_GENERATION
+}
+
+enum AiProviderType {
+  IMAGE
+}
+
+enum ErrorType {
+  RATE_LIMIT
+  AUTH_FAILURE
+  TIMEOUT
+  PROVIDER_ERROR
+  NETWORK_ERROR
+  UNKNOWN
+}
+
+enum AlertConditionType {
+  CIRCUIT_BREAKER
+  FAILURE_RATE
+  LATENCY_THRESHOLD
+  PROVIDER_DOWN
+}
+
+enum AlertSeverity {
+  WARNING
+  CRITICAL
+}
+
+// ============================================================
+// API Key & Quota — 调用方鉴权与配额管理
+// ============================================================
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  name      String
+  keyHash   String   @unique
+  keyPrefix String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  quota     Quota?
+  requests  ImageGenerationRequest[]
+  operations AiOperation[]
+
+  @@index([keyHash])
+  @@index([enabled])
+}
+
+model Quota {
+  id            String    @id @default(cuid())
+  apiKeyId      String    @unique
+  monthlyLimit  Int?
+  dailyLimit    Int?
+  monthlyUsed   Int       @default(0)
+  dailyUsed     Int       @default(0)
+  monthlyResetAt DateTime?
+  dailyResetAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  apiKey        ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId])
+}
+
+// ============================================================
+// Image Provider — 图片生成供应商（含智能调度指标）
+// ============================================================
+
+model ImageProvider {
+  id                       String                   @id @default(cuid())
+  name                     String                   @unique
+  vendor                   String
+  baseUrl                  String
+  model                    String
+  priority                 Int                      @default(100)
+  enabled                  Boolean                  @default(true)
+  apiKeyCiphertext         String
+
+  // 基础健康指标
+  failureCount             Int                      @default(0)
+  lastFailureAt            DateTime?
+  lastSuccessAt            DateTime?
+  cooldownUntil            DateTime?
+
+  // 智能调度指标
+  totalAttempts            Int                      @default(0)
+  successfulAttempts       Int                      @default(0)
+  totalDurationMs          Int                      @default(0)
+  avgDurationMs            Int                      @default(0)
+  estimatedCostPerReq      Float                    @default(0)
+  consecutiveFailures      Int                      @default(0)
+
+  // 熔断器
+  circuitBreakerTrippedAt  DateTime?
+  circuitBreakerTripReason String?
+
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  attempts                 ImageGenerationAttempt[]
+  requests                 ImageGenerationRequest[]
+  statsSnapshots           ProviderStatsSnapshot[]
+  alertRules               AlertRule[]
+  alertEvents              AlertEvent[]
+
+  @@index([enabled, priority])
+  @@index([cooldownUntil])
+}
+
+// ============================================================
+// Image Generation — 图片生成请求与尝试
+// ============================================================
+
+model ImageGenerationRequest {
+  id                      String                   @id @default(cuid())
+  apiKeyId                String
+  operationId             String?                  @unique
+  selectedProviderId      String?
+  selectedProviderName    String?
+  selectedProviderBaseUrl String?
+  selectedProviderModel   String?
+  attemptCount            Int                      @default(0)
+  finalUpstreamApiKind    UpstreamApiKind          @default(UNKNOWN)
+  status                  GenerationStatus         @default(STARTED)
+  statusMessage           String?
+  durationMs              Int?
+  prompt                  String
+  finalPrompt             String?
+  revisedPrompt           String?
+  imageType               String?
+  aspectRatio             String?
+  size                    String?
+  referenceImageCount     Int                      @default(0)
+  referenceImagesJson     Json?
+  requestPayloadJson      Json?
+  requestSnapshotJson     Json?
+  responseSnapshotJson    Json?
+  errorMessage            String?
+  metadata                Json?
+  workerJobId             String?
+  queuedAt                DateTime?
+  startedAt               DateTime?
+  completedAt             DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  apiKey                  ApiKey                   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  operation               AiOperation?             @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  selectedProvider        ImageProvider?           @relation(fields: [selectedProviderId], references: [id], onDelete: SetNull)
+  attempts                ImageGenerationAttempt[]
+  assets                  GeneratedImageAsset[]
+
+  @@index([apiKeyId, createdAt(sort: Desc)])
+  @@index([selectedProviderId])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model ImageGenerationAttempt {
+  id                   String                  @id @default(cuid())
+  requestId            String
+  operationAttemptId   String?                 @unique
+  providerId           String?
+  baseUrl              String
+  model                String
+  attemptIndex         Int
+  status               AttemptStatus           @default(STARTED)
+  durationMs           Int?
+  errorMessage         String?
+  errorType            ErrorType?
+  upstreamApiKind      UpstreamApiKind         @default(UNKNOWN)
+  requestSnapshotJson  Json?
+  responseSnapshotJson Json?
+  startedAt            DateTime                @default(now())
+  completedAt          DateTime?
+  request              ImageGenerationRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  operationAttempt     AiOperationAttempt?     @relation(fields: [operationAttemptId], references: [id], onDelete: SetNull)
+  provider             ImageProvider?          @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, attemptIndex])
+  @@index([providerId])
+  @@index([errorType, startedAt(sort: Desc)])
+  @@index([providerId, startedAt(sort: Desc)])
+}
+
+model GeneratedImageAsset {
+  id                String                 @id @default(cuid())
+  requestId         String
+  operationId       String?
+  cosUrl            String
+  cosKey            String
+  mimeType          String
+  bytes             Int
+  upstreamSourceUrl String?
+  createdAt         DateTime               @default(now())
+  request           ImageGenerationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  operation         AiOperation?           @relation(fields: [operationId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
+  @@index([operationId])
+}
+
+// ============================================================
+// AI Operation — 操作追踪（可观测性）
+// ============================================================
+
+model AiOperation {
+  id                     String               @id @default(cuid())
+  apiKeyId               String
+  kind                   AiOperationKind
+  entryPoint             String?
+  status                 AttemptStatus        @default(STARTED)
+  inputSummaryJson       Json?
+  outputSummaryJson      Json?
+  requestSnapshotJson    Json?
+  responseSnapshotJson   Json?
+  finalPrompt            String?
+  errorMessage           String?
+  expiresAt              DateTime?
+  startedAt              DateTime             @default(now())
+  completedAt            DateTime?
+  durationMs             Int?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  apiKey                 ApiKey               @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  imageGenerationRequest ImageGenerationRequest?
+  attempts               AiOperationAttempt[]
+  generatedAssets        GeneratedImageAsset[]
+
+  @@index([apiKeyId, createdAt(sort: Desc)])
+  @@index([kind, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model AiOperationAttempt {
+  id                     String               @id @default(cuid())
+  operationId            String
+  providerType           AiProviderType
+  providerId             String?
+  providerName           String?
+  baseUrl                String?
+  model                  String?
+  attemptIndex           Int
+  status                 AttemptStatus        @default(STARTED)
+  durationMs             Int?
+  errorMessage           String?
+  upstreamApiKind        UpstreamApiKind      @default(UNKNOWN)
+  requestSnapshotJson    Json?
+  responseSnapshotJson   Json?
+  startedAt              DateTime             @default(now())
+  completedAt            DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  operation              AiOperation          @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  imageGenerationAttempt ImageGenerationAttempt?
+
+  @@index([operationId, attemptIndex])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+// ============================================================
+// Provider Stats Snapshot — 定时统计快照（用于历史趋势图表）
+// ============================================================
+
+model ProviderStatsSnapshot {
+  id                 String        @id @default(cuid())
+  providerId         String
+  snapshotAt         DateTime      @default(now())
+  successRate        Float
+  avgDurationMs      Int
+  totalAttempts      Int
+  successfulAttempts Int
+  estimatedCost      Float
+  provider           ImageProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, snapshotAt(sort: Desc)])
+  @@index([snapshotAt])
+}
+
+// ============================================================
+// Alert Rules & Events — 告警规则与事件
+// ============================================================
+
+model AlertRule {
+  id             String             @id @default(cuid())
+  name           String
+  enabled        Boolean            @default(true)
+  conditionType  AlertConditionType
+  providerId     String?
+  threshold      Json?
+  webhookUrl     String
+  lastTriggeredAt DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  provider       ImageProvider?     @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  events         AlertEvent[]
+
+  @@index([enabled, conditionType])
+  @@index([providerId])
+}
+
+model AlertEvent {
+  id            String        @id @default(cuid())
+  ruleId        String
+  providerId    String?
+  message       String
+  severity      AlertSeverity
+  acknowledged  Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  rule          AlertRule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  provider      ImageProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([ruleId, createdAt(sort: Desc)])
+  @@index([severity, acknowledged, createdAt(sort: Desc)])
+  @@index([providerId])
+}

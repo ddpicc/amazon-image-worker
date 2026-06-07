@@ -1,0 +1,92 @@
+import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/db/prisma'
+
+export async function GET() {
+  try {
+    const now = new Date()
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+    // Task counts for different time windows
+    const [last24h, last7d, last30d] = await Promise.all([
+      prisma.imageGenerationRequest.count({
+        where: { createdAt: { gte: twentyFourHoursAgo } },
+      }),
+      prisma.imageGenerationRequest.count({
+        where: { createdAt: { gte: sevenDaysAgo } },
+      }),
+      prisma.imageGenerationRequest.count({
+        where: { createdAt: { gte: thirtyDaysAgo } },
+      }),
+    ])
+
+    // Success rate (last 24h)
+    const [succeeded24h, total24h] = await Promise.all([
+      prisma.imageGenerationRequest.count({
+        where: {
+          createdAt: { gte: twentyFourHoursAgo },
+          status: 'SUCCEEDED',
+        },
+      }),
+      prisma.imageGenerationRequest.count({
+        where: {
+          createdAt: { gte: twentyFourHoursAgo },
+          status: { in: ['SUCCEEDED', 'FAILED'] },
+        },
+      }),
+    ])
+    const successRate = total24h > 0 ? succeeded24h / total24h : 0
+
+    // Average duration (last 24h, only completed tasks with duration)
+    const durationResult = await prisma.imageGenerationRequest.aggregate({
+      _avg: { durationMs: true },
+      where: {
+        createdAt: { gte: twentyFourHoursAgo },
+        status: 'SUCCEEDED',
+        durationMs: { not: null },
+      },
+    })
+    const avgDurationMs = durationResult._avg.durationMs ?? 0
+
+    // Active provider count
+    const activeProviderCount = await prisma.imageProvider.count({
+      where: { enabled: true },
+    })
+
+    // Recent failures (last 10 failed tasks)
+    const recentFailures = await prisma.imageGenerationRequest.findMany({
+      where: {
+        status: 'FAILED',
+        createdAt: { gte: twentyFourHoursAgo },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: {
+        id: true,
+        prompt: true,
+        errorMessage: true,
+        createdAt: true,
+        selectedProviderName: true,
+        durationMs: true,
+      },
+    })
+
+    return NextResponse.json({
+      data: {
+        tasks: {
+          last24h,
+          last7d,
+          last30d,
+        },
+        successRate,
+        avgDurationMs: Math.round(avgDurationMs),
+        activeProviderCount,
+        recentFailures,
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}

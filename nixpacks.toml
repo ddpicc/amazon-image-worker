@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["openssl"]
+
+[phases.build]
+cmds = ["npx prisma generate --schema prisma/schema.prisma", "npm run build:web"]
+
+[start]
+cmd = "bash scripts/start-web.sh"

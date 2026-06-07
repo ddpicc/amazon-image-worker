@@ -1,0 +1,39 @@
+{
+  "name": "amazon-image-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "prisma generate --schema prisma/schema.prisma",
+    "build:web": "next build",
+    "start": "tsx src/worker/image-generation-worker.ts",
+    "start:web": "next start -p 3001",
+    "dev": "tsx watch src/worker/image-generation-worker.ts",
+    "dev:web": "next dev -p 3001",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:push": "prisma db push --schema prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bullmq": "^5.78.0",
+    "clsx": "^2.1.1",
+    "cos-nodejs-sdk-v5": "^2.15.4",
+    "ioredis": "^5.11.1",
+    "lucide-react": "^1.17.0",
+    "next": "^16.2.7",
+    "openai": "^4.47.1",
+    "prisma": "^5.22.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "recharts": "^3.8.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/node": "^20.12.12",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.4.5"
+  }
+}
