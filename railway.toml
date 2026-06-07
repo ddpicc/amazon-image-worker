@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "npx prisma generate --schema prisma/schema.prisma && npm run build:web"
+
+[deploy]
+startCommand = "bash scripts/start-web.sh"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
