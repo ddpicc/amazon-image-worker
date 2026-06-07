@@ -73,17 +73,19 @@ export async function GET() {
     })
 
     return NextResponse.json({
-      data: {
-        tasks: {
-          last24h,
-          last7d,
-          last30d,
-        },
-        successRate,
-        avgDurationMs: Math.round(avgDurationMs),
-        activeProviderCount,
-        recentFailures,
-      },
+      totalTasks24h: last24h,
+      totalTasks7d: last7d,
+      totalTasks30d: last30d,
+      successRate: Number((successRate * 100).toFixed(1)),
+      avgDurationMs: Math.round(avgDurationMs),
+      activeProviders: activeProviderCount,
+      recentFailures: recentFailures.map((failure) => ({
+        id: failure.id,
+        prompt: failure.prompt,
+        providerName: failure.selectedProviderName,
+        errorMessage: failure.errorMessage,
+        createdAt: failure.createdAt,
+      })),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
