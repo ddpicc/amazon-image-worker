@@ -11,6 +11,6 @@ if [ "$SERVICE_ROLE" = "worker" ]; then
   echo "[startup] Starting Worker..."
   exec npx tsx src/worker/image-generation-worker.ts
 else
-  echo "[startup] Starting Web Server..."
-  exec node server.js
+  echo "[startup] Starting Web Server on port ${PORT:-3001}..."
+  exec npx next start -p ${PORT:-3001} -H 0.0.0.0
 fi
