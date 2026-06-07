@@ -24,35 +24,44 @@ export async function proxy(request: NextRequest) {
 
   if (pathname.startsWith('/api/v1/tasks')) {
     const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
 
-    const rawKey = authHeader.slice('Bearer '.length)
-    const keyHash = await hashApiKeyEdge(rawKey)
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const rawKey = authHeader.slice('Bearer '.length)
+      const keyHash = await hashApiKeyEdge(rawKey)
 
-    try {
-      const verifyRes = await fetch(new URL('/api/internal/verify-key', request.url), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyHash }),
-      })
+      try {
+        const verifyRes = await fetch(new URL('/api/internal/verify-key', request.url), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keyHash }),
+        })
 
-      if (!verifyRes.ok) {
+        if (!verifyRes.ok) {
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
+        const apiKey = await verifyRes.json()
+        const requestHeaders = new Headers(request.headers)
+        requestHeaders.set('x-api-key-id', apiKey.id)
+        requestHeaders.set('x-api-key-name', apiKey.name)
+
+        return NextResponse.next({
+          request: { headers: requestHeaders },
+        })
+      } catch {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
+    }
 
-      const apiKey = await verifyRes.json()
+    if (checkAdminAuth(request)) {
       const requestHeaders = new Headers(request.headers)
-      requestHeaders.set('x-api-key-id', apiKey.id)
-      requestHeaders.set('x-api-key-name', apiKey.name)
-
+      requestHeaders.set('x-admin-auth', 'true')
       return NextResponse.next({
         request: { headers: requestHeaders },
       })
-    } catch {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const adminRoutes = [

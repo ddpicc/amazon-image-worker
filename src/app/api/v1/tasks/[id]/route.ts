@@ -7,14 +7,15 @@ export async function GET(
 ) {
   try {
     const apiKeyId = request.headers.get('x-api-key-id')
-    if (!apiKeyId) {
+    const isAdmin = request.headers.get('x-admin-auth') === 'true'
+    if (!apiKeyId && !isAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { id } = await params
 
     const task = await prisma.imageGenerationRequest.findFirst({
-      where: { id, apiKeyId },
+      where: apiKeyId ? { id, apiKeyId } : { id },
       include: {
         attempts: {
           orderBy: { attemptIndex: 'asc' },

@@ -15,7 +15,11 @@ export function isAuthenticated(): boolean {
   return getAdminToken() !== null
 }
 
-export function logout(): void {
-  document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
-  window.location.href = '/dashboard/login'
+export async function logout(): Promise<void> {
+  try {
+    await fetch('/api/v1/auth/logout', { method: 'POST' })
+  } finally {
+    document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+    window.location.href = '/dashboard/login'
+  }
 }

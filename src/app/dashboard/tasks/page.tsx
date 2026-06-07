@@ -89,7 +89,6 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'ALL'>('ALL')
   const [page, setPage] = useState(1)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [retryingId, setRetryingId] = useState<string | null>(null)
   const limit = 20
 
   const fetchTasks = useCallback(async () => {
@@ -127,23 +126,7 @@ export default function TasksPage() {
   }
 
   async function handleRetry(task: Task) {
-    if (!confirm(`Retry task "${task.prompt.slice(0, 50)}..."?`)) return
-    setRetryingId(task.id)
-    try {
-      const res = await fetch('/api/v1/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: task.prompt }),
-      })
-      if (res.ok) {
-        alert('Task re-enqueued successfully.')
-      } else {
-        const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to retry task')
-      }
-    } finally {
-      setRetryingId(null)
-    }
+    alert('Dashboard admin retry is not wired yet. Please retry using the API key client flow.')
   }
 
   if (loading) {
@@ -220,7 +203,7 @@ export default function TasksPage() {
                     expanded={expandedId === task.id}
                     onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
                     onRetry={handleRetry}
-                    retrying={retryingId === task.id}
+                    retrying={false}
                   />
                 ))
               )}

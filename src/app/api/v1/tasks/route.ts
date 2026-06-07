@@ -8,7 +8,8 @@ import type { AspectRatio, RenderSize } from '@/lib/image-options'
 export async function GET(request: NextRequest) {
   try {
     const apiKeyId = request.headers.get('x-api-key-id')
-    if (!apiKeyId) {
+    const isAdmin = request.headers.get('x-admin-auth') === 'true'
+    if (!apiKeyId && !isAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -18,18 +19,24 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 20))
     const skip = (page - 1) * limit
 
-    const where: Record<string, unknown> = { apiKeyId }
+    const where: Record<string, unknown> = {}
+    if (apiKeyId) {
+      where.apiKeyId = apiKeyId
+    }
     if (status) {
       where.status = status
     }
 
-    const [data, total] = await Promise.all([
+    const [tasks, total] = await Promise.all([
       prisma.imageGenerationRequest.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
         include: {
+          attempts: {
+            orderBy: { attemptIndex: 'asc' },
+          },
           assets: {
             orderBy: { createdAt: 'asc' },
           },
@@ -38,7 +45,13 @@ export async function GET(request: NextRequest) {
       prisma.imageGenerationRequest.count({ where }),
     ])
 
-    return NextResponse.json({ data, total, page, limit })
+    return NextResponse.json({
+      tasks,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json({ error: message }, { status: 500 })

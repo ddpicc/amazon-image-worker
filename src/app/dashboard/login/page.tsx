@@ -13,17 +13,17 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      // Set the admin cookie so middleware can validate it
-      document.cookie = `admin_token=${encodeURIComponent(password)}; path=/`
+      const res = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
 
-      // Verify by hitting a protected endpoint
-      const res = await fetch('/api/v1/stats/overview')
       if (res.ok) {
         window.location.href = '/dashboard'
       } else {
-        // Clear the bad cookie
-        document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
-        setError('Invalid password')
+        const body = await res.json().catch(() => ({}))
+        setError(body.error || 'Invalid password')
       }
     } catch {
       setError('Connection error. Please try again.')
