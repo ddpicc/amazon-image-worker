@@ -55,15 +55,21 @@ export default function DashboardOverview() {
   const fetchData = useCallback(async (currentUser: DashboardUser) => {
     try {
       if (currentUser.role === 'ADMIN') {
-        const res = await fetch('/api/v1/stats/overview')
+        const res = await fetch('/api/v1/stats/overview', {
+          credentials: 'include',
+        })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
         setAdminData(json)
         setUserData(null)
       } else {
         const [tasksRes, keysRes] = await Promise.all([
-          fetch('/api/v1/tasks?page=1&limit=20'),
-          fetch('/api/v1/api-keys'),
+          fetch('/api/v1/tasks?page=1&limit=20', {
+            credentials: 'include',
+          }),
+          fetch('/api/v1/api-keys', {
+            credentials: 'include',
+          }),
         ])
         if (!tasksRes.ok || !keysRes.ok) throw new Error('Failed to load user data')
 
