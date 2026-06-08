@@ -132,28 +132,23 @@ export default function AdminTestImagePage() {
     setSubmitting(true)
     setError('')
 
-    let tempKeyId = ''
-    let tempRawKey = ''
-
     try {
       const keyRes = await fetch('/api/v1/admin/test-api-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: `Admin Test Key ${new Date().toISOString()}` }),
       })
       const keyJson = await keyRes.json().catch(() => null)
       if (!keyRes.ok) {
         throw new Error(keyJson?.error || 'Failed to create temporary API key')
       }
 
-      tempKeyId = keyJson.data.id
-      tempRawKey = keyJson.data.key
+      const testRawKey = keyJson.data.key as string
 
       const submitRes = await fetch('/api/v1/tasks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tempRawKey}`,
+          Authorization: `Bearer ${testRawKey}`,
         },
         body: JSON.stringify({
           prompt: prompt.trim(),
@@ -187,13 +182,6 @@ export default function AdminTestImagePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit test task')
     } finally {
-      if (tempKeyId) {
-        await fetch('/api/v1/admin/test-api-key', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: tempKeyId }),
-        }).catch(() => undefined)
-      }
       setSubmitting(false)
     }
   }

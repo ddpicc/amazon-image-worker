@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createApiKey, revokeApiKeyForUser } from '@/lib/auth/api-key-service'
+import { ensureAdminTestApiKey, revokeApiKeyForUser } from '@/lib/auth/api-key-service'
 import { requireAdminRequest } from '@/lib/auth/request-auth'
 
 export async function POST(request: NextRequest) {
@@ -10,12 +10,7 @@ export async function POST(request: NextRequest) {
     }
     const { auth } = result
 
-    const body = await request.json().catch(() => ({}))
-    const name = typeof body?.name === 'string' && body.name.trim()
-      ? body.name.trim()
-      : `Admin Test Key ${new Date().toISOString()}`
-
-    const created = await createApiKey(name, auth.userId)
+    const created = await ensureAdminTestApiKey(auth.userId)
     return NextResponse.json({ data: created }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'

@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { prisma } from '@/lib/db/prisma'
 import {
   generateRawApiKey,
@@ -13,6 +14,17 @@ export interface CreateApiKeyResult {
   createdAt: Date
 }
 
+const ADMIN_TEST_KEY_NAME = 'Admin Test Key'
+
+function generateAdminTestRawApiKey(ownerUserId: string): string {
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${process.env.APP_SECRET}:admin-test:${ownerUserId}`)
+    .digest('hex')
+
+  return `imgw_${digest.slice(0, 48)}`
+}
+
 export async function createApiKey(name: string, ownerUserId: string): Promise<CreateApiKeyResult> {
   const rawKey = generateRawApiKey()
   const keyHash = hashApiKey(rawKey)
@@ -26,6 +38,47 @@ export async function createApiKey(name: string, ownerUserId: string): Promise<C
       keyPrefix,
     },
   })
+
+  return {
+    id: record.id,
+    name: record.name,
+    key: rawKey,
+    keyPrefix: record.keyPrefix,
+    createdAt: record.createdAt,
+  }
+}
+
+export async function ensureAdminTestApiKey(ownerUserId: string): Promise<CreateApiKeyResult> {
+  const rawKey = generateAdminTestRawApiKey(ownerUserId)
+  const keyHash = hashApiKey(rawKey)
+  const keyPrefix = extractKeyPrefix(rawKey)
+
+  const existing = await prisma.apiKey.findFirst({
+    where: {
+      ownerUserId,
+      name: ADMIN_TEST_KEY_NAME,
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const record = existing
+    ? await prisma.apiKey.update({
+        where: { id: existing.id },
+        data: {
+          keyHash,
+          keyPrefix,
+          enabled: true,
+        },
+      })
+    : await prisma.apiKey.create({
+        data: {
+          ownerUserId,
+          name: ADMIN_TEST_KEY_NAME,
+          keyHash,
+          keyPrefix,
+          enabled: true,
+        },
+      })
 
   return {
     id: record.id,
