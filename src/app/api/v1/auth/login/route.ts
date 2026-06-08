@@ -1,26 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db/prisma'
+import { verifyPassword } from '@/lib/auth/password'
+import { createSession, getSessionCookieOptions, SESSION_COOKIE_NAME } from '@/lib/auth/session'
+import { ensureBootstrapAdmin } from '@/lib/auth/bootstrap-admin'
 
 export async function POST(request: NextRequest) {
   try {
-    const { password } = await request.json()
+    await ensureBootstrapAdmin()
+
+    const { email, password } = await request.json()
+
+    if (!email || typeof email !== 'string') {
+      return NextResponse.json({ error: 'Email is required' }, { status: 400 })
+    }
 
     if (!password || typeof password !== 'string') {
       return NextResponse.json({ error: 'Password is required' }, { status: 400 })
     }
 
-    if (password !== process.env.ADMIN_PASSWORD) {
-      return NextResponse.json({ error: 'Invalid password' }, { status: 401 })
-    }
-
-    const response = NextResponse.json({ ok: true })
-    response.cookies.set('admin_token', password, {
-      httpOnly: false,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7,
+    const normalizedEmail = email.trim().toLowerCase()
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
     })
 
+    if (!user || !user.enabled) {
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
+    }
+
+    const valid = await verifyPassword(password, user.passwordHash)
+    if (!valid) {
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
+    }
+
+    const { token } = await createSession(user.id)
+    const response = NextResponse.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        enabled: user.enabled,
+      },
+    })
+    response.cookies.set(SESSION_COOKIE_NAME, token, getSessionCookieOptions())
     return response
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'

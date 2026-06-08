@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
-/**
- * Internal endpoint called by middleware to verify API keys.
- * Not exposed to external users (middleware doesn't match /api/internal/*).
- */
 export async function POST(request: NextRequest) {
   try {
     const { keyHash } = await request.json()
@@ -13,15 +9,32 @@ export async function POST(request: NextRequest) {
     }
 
     const apiKey = await prisma.apiKey.findUnique({
-      where: { keyHash, enabled: true },
-      select: { id: true, name: true },
+      where: { keyHash },
+      select: {
+        id: true,
+        name: true,
+        enabled: true,
+        ownerUserId: true,
+        ownerUser: {
+          select: {
+            id: true,
+            role: true,
+            enabled: true,
+          },
+        },
+      },
     })
 
-    if (!apiKey) {
+    if (!apiKey || !apiKey.enabled || !apiKey.ownerUser || !apiKey.ownerUser.enabled) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    return NextResponse.json(apiKey)
+    return NextResponse.json({
+      id: apiKey.id,
+      name: apiKey.name,
+      ownerUserId: apiKey.ownerUserId,
+      ownerUserRole: apiKey.ownerUser.role,
+    })
   } catch {
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }

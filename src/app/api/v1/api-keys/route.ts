@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createApiKey, listApiKeys } from '@/lib/auth/api-key-service'
-import { setQuota } from '@/lib/auth/quota-service'
+import { createApiKey, listAllApiKeysForAdmin, listApiKeysByUser } from '@/lib/auth/api-key-service'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const keys = await listApiKeys()
-    // Omit keyHash from response
-    const sanitized = keys.map(({ keyHash, ...rest }) => rest)
+    const userId = request.headers.get('x-user-id')
+    const userRole = request.headers.get('x-user-role')
 
-    return NextResponse.json({ data: sanitized })
+    if (!userId || !userRole) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const keys = userRole === 'ADMIN'
+      ? await listAllApiKeysForAdmin()
+      : await listApiKeysByUser(userId)
+
+    const sanitized = keys.map(({ keyHash, ...rest }) => rest)
+    return NextResponse.json({ keys: sanitized })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json({ error: message }, { status: 500 })
@@ -17,25 +24,27 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = request.headers.get('x-user-id')
+    const userRole = request.headers.get('x-user-role')
+    if (!userId || !userRole) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (userRole === 'ADMIN') {
+      return NextResponse.json({ error: 'Admins do not create personal API keys' }, { status: 403 })
+    }
+
     const body = await request.json()
-    const { name, dailyLimit, monthlyLimit } = body as {
+    const { name } = body as {
       name?: string
-      dailyLimit?: number
-      monthlyLimit?: number
     }
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'name is required' }, { status: 400 })
     }
 
-    const result = await createApiKey(name.trim())
-
-    // Set quota if limits were provided
-    if (dailyLimit !== undefined || monthlyLimit !== undefined) {
-      await setQuota(result.id, dailyLimit ?? null, monthlyLimit ?? null)
-    }
-
-    return NextResponse.json({ data: result }, { status: 201 })
+    const result = await createApiKey(name.trim(), userId)
+    return NextResponse.json({ apiKey: result.key, data: result }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json({ error: message }, { status: 500 })

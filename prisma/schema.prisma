@@ -11,6 +11,11 @@ datasource db {
 // Enums
 // ============================================================
 
+enum UserRole {
+  ADMIN
+  USER
+}
+
 enum GenerationStatus {
   STARTED
   QUEUED
@@ -61,37 +66,73 @@ enum AlertSeverity {
 }
 
 // ============================================================
+// Users & Sessions — 人类用户与登录会话
+// ============================================================
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  role         UserRole  @default(USER)
+  enabled      Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  apiKeys      ApiKey[]
+  sessions     Session[]
+
+  @@index([role, enabled])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ============================================================
 // API Key & Quota — 调用方鉴权与配额管理
 // ============================================================
 
 model ApiKey {
-  id        String   @id @default(cuid())
-  name      String
-  keyHash   String   @unique
-  keyPrefix String
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  quota     Quota?
-  requests  ImageGenerationRequest[]
-  operations AiOperation[]
+  id          String   @id @default(cuid())
+  ownerUserId String?
+  name        String
+  keyHash     String   @unique
+  keyPrefix   String
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  ownerUser   User?    @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  quota       Quota?
+  requests    ImageGenerationRequest[]
+  operations  AiOperation[]
 
   @@index([keyHash])
   @@index([enabled])
+  @@index([ownerUserId, createdAt(sort: Desc)])
 }
 
 model Quota {
-  id            String    @id @default(cuid())
-  apiKeyId      String    @unique
-  monthlyLimit  Int?
-  dailyLimit    Int?
-  monthlyUsed   Int       @default(0)
-  dailyUsed     Int       @default(0)
+  id             String    @id @default(cuid())
+  apiKeyId       String    @unique
+  monthlyLimit   Int?
+  dailyLimit     Int?
+  monthlyUsed    Int       @default(0)
+  dailyUsed      Int       @default(0)
   monthlyResetAt DateTime?
-  dailyResetAt  DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  apiKey        ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  dailyResetAt   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  apiKey         ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
 
   @@index([apiKeyId])
 }
@@ -313,33 +354,33 @@ model ProviderStatsSnapshot {
 // ============================================================
 
 model AlertRule {
-  id             String             @id @default(cuid())
-  name           String
-  enabled        Boolean            @default(true)
-  conditionType  AlertConditionType
-  providerId     String?
-  threshold      Json?
-  webhookUrl     String
+  id              String             @id @default(cuid())
+  name            String
+  enabled         Boolean            @default(true)
+  conditionType   AlertConditionType
+  providerId      String?
+  threshold       Json?
+  webhookUrl      String
   lastTriggeredAt DateTime?
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  provider       ImageProvider?     @relation(fields: [providerId], references: [id], onDelete: SetNull)
-  events         AlertEvent[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  provider        ImageProvider?     @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  events          AlertEvent[]
 
   @@index([enabled, conditionType])
   @@index([providerId])
 }
 
 model AlertEvent {
-  id            String        @id @default(cuid())
-  ruleId        String
-  providerId    String?
-  message       String
-  severity      AlertSeverity
-  acknowledged  Boolean       @default(false)
-  createdAt     DateTime      @default(now())
-  rule          AlertRule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  provider      ImageProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  id           String         @id @default(cuid())
+  ruleId       String
+  providerId   String?
+  message      String
+  severity     AlertSeverity
+  acknowledged Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  rule         AlertRule      @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  provider     ImageProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
 
   @@index([ruleId, createdAt(sort: Desc)])
   @@index([severity, acknowledged, createdAt(sort: Desc)])

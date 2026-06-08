@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { Worker } from 'bullmq'
 import { executeQueuedImageGeneration } from '../lib/image-generation-service'
 import { getImageGenerationQueueName, ImageGenerationQueueJobData } from '../lib/image-generation-worker-queue'

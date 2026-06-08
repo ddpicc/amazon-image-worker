@@ -8,8 +8,11 @@ import type { AspectRatio, RenderSize } from '@/lib/image-options'
 export async function GET(request: NextRequest) {
   try {
     const apiKeyId = request.headers.get('x-api-key-id')
-    const isAdmin = request.headers.get('x-admin-auth') === 'true'
-    if (!apiKeyId && !isAdmin) {
+    const userId = request.headers.get('x-user-id')
+    const userRole = request.headers.get('x-user-role')
+    const authType = request.headers.get('x-auth-type')
+
+    if (!userId || !userRole || !authType) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -19,10 +22,20 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 20))
     const skip = (page - 1) * limit
 
-    const where: Record<string, unknown> = {}
-    if (apiKeyId) {
-      where.apiKeyId = apiKeyId
+    let where: Record<string, unknown> = {}
+
+    if (userRole === 'ADMIN') {
+      where = {}
+    } else if (authType === 'api-key' && apiKeyId) {
+      where = { apiKeyId }
+    } else {
+      where = {
+        apiKey: {
+          ownerUserId: userId,
+        },
+      }
     }
+
     if (status) {
       where.status = status
     }
@@ -34,6 +47,13 @@ export async function GET(request: NextRequest) {
         skip,
         take: limit,
         include: {
+          apiKey: {
+            select: {
+              id: true,
+              name: true,
+              keyPrefix: true,
+            },
+          },
           attempts: {
             orderBy: { attemptIndex: 'asc' },
           },
@@ -79,7 +99,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'prompt is required' }, { status: 400 })
     }
 
-    // Check quota before proceeding
     const quotaResult = await checkAndIncrementQuota(apiKeyId)
     if (!quotaResult.allowed) {
       return NextResponse.json(
@@ -109,7 +128,6 @@ export async function POST(request: NextRequest) {
       metadata,
     })
 
-    // Enqueue for worker processing
     await enqueueImageGeneration({ requestId: result.requestId })
 
     return NextResponse.json({
