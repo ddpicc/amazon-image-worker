@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { NextRequest } from 'next/server'
+import { requireAdminRequest } from '@/lib/auth/request-auth'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const now = new Date()
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)

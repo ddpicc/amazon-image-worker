@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { requireAdminRequest } from '@/lib/auth/request-auth'
 
 export async function GET(request: NextRequest) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const { searchParams } = request.nextUrl
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
     const acknowledgedParam = searchParams.get('acknowledged')

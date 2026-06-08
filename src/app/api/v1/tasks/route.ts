@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { checkAndIncrementQuota } from '@/lib/auth/quota-service'
+import { requireRequestAuth } from '@/lib/auth/request-auth'
 import { createQueuedImageGenerationRequest } from '@/lib/image-generation-service'
 import { enqueueImageGeneration } from '@/lib/image-generation-worker-queue'
 import type { AspectRatio, RenderSize } from '@/lib/image-options'
 
 export async function GET(request: NextRequest) {
   try {
-    const apiKeyId = request.headers.get('x-api-key-id')
-    const userId = request.headers.get('x-user-id')
-    const userRole = request.headers.get('x-user-role')
-    const authType = request.headers.get('x-auth-type')
-
-    if (!userId || !userRole || !authType) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const result = await requireRequestAuth(request)
+    if ('error' in result) {
+      return result.error
     }
+    const { auth } = result
 
     const { searchParams } = request.nextUrl
     const status = searchParams.get('status') || undefined
@@ -24,14 +22,14 @@ export async function GET(request: NextRequest) {
 
     let where: Record<string, unknown> = {}
 
-    if (userRole === 'ADMIN') {
+    if (auth.role === 'ADMIN') {
       where = {}
-    } else if (authType === 'api-key' && apiKeyId) {
-      where = { apiKeyId }
+    } else if (auth.authType === 'api-key' && auth.apiKeyId) {
+      where = { apiKeyId: auth.apiKeyId }
     } else {
       where = {
         apiKey: {
-          ownerUserId: userId,
+          ownerUserId: auth.userId,
         },
       }
     }
@@ -80,8 +78,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKeyId = request.headers.get('x-api-key-id')
-    if (!apiKeyId) {
+    const result = await requireRequestAuth(request)
+    if ('error' in result) {
+      return result.error
+    }
+    const { auth } = result
+
+    if (auth.authType !== 'api-key' || !auth.apiKeyId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -99,7 +102,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'prompt is required' }, { status: 400 })
     }
 
-    const quotaResult = await checkAndIncrementQuota(apiKeyId)
+    const quotaResult = await checkAndIncrementQuota(auth.apiKeyId)
     if (!quotaResult.allowed) {
       return NextResponse.json(
         { error: quotaResult.reason || 'Quota exceeded' },
@@ -110,8 +113,8 @@ export async function POST(request: NextRequest) {
     const refImages = Array.isArray(referenceImages) ? referenceImages : []
     const resolvedSize = size || '1024x1024'
 
-    const result = await createQueuedImageGenerationRequest({
-      apiKeyId,
+    const submitResult = await createQueuedImageGenerationRequest({
+      apiKeyId: auth.apiKeyId,
       prompt: prompt.trim(),
       originalPrompt: prompt.trim(),
       entryApi: 'api-tasks',
@@ -128,12 +131,12 @@ export async function POST(request: NextRequest) {
       metadata,
     })
 
-    await enqueueImageGeneration({ requestId: result.requestId })
+    await enqueueImageGeneration({ requestId: submitResult.requestId })
 
     return NextResponse.json({
-      requestId: result.requestId,
-      status: result.status,
-      statusMessage: result.statusMessage,
+      requestId: submitResult.requestId,
+      status: submitResult.status,
+      statusMessage: submitResult.statusMessage,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'

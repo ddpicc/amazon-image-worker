@@ -1,30 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { getApiKeyByIdForUser, rotateApiKeyForUser } from '@/lib/auth/api-key-service'
+import { requireRequestAuth } from '@/lib/auth/request-auth'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const userRole = request.headers.get('x-user-role')
-    if (!userId || !userRole) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const result = await requireRequestAuth(request)
+    if ('error' in result) {
+      return result.error
     }
+    const { auth } = result
 
     const { id } = await params
 
-    if (userRole === 'ADMIN') {
+    if (auth.role === 'ADMIN') {
       return NextResponse.json({ error: 'Admins do not rotate personal API keys here' }, { status: 403 })
     }
 
-    const existing = await getApiKeyByIdForUser(id, userId)
+    const existing = await getApiKeyByIdForUser(id, auth.userId)
     if (!existing) {
       return NextResponse.json({ error: 'API key not found' }, { status: 404 })
     }
 
-    const newKey = await rotateApiKeyForUser(id, userId)
+    const newKey = await rotateApiKeyForUser(id, auth.userId)
 
     const updated = await prisma.apiKey.findUnique({
       where: { id },

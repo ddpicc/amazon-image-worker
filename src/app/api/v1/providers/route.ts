@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdminRequest } from '@/lib/auth/request-auth'
 import { listProviders, createProvider } from '@/lib/providers/provider-service'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const providers = await listProviders(true)
     return NextResponse.json({ data: providers })
   } catch (error) {
@@ -13,6 +19,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const body = await request.json()
     const { name, vendor, baseUrl, model, priority, apiKeyPlaintext, estimatedCostPerReq } = body as {
       name?: string

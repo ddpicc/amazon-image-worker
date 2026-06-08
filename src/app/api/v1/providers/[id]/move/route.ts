@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdminRequest } from '@/lib/auth/request-auth'
 import { moveProviderPriority } from '@/lib/providers/provider-service'
 
 export async function POST(
@@ -6,6 +7,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const { id } = await params
 
     const body = await request.json()

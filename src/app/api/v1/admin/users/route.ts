@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { requireAdminRequest } from '@/lib/auth/request-auth'
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const users = await prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
       include: {

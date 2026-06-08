@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createApiKey, listAllApiKeysForAdmin, listApiKeysByUser } from '@/lib/auth/api-key-service'
+import { requireRequestAuth } from '@/lib/auth/request-auth'
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const userRole = request.headers.get('x-user-role')
-
-    if (!userId || !userRole) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const result = await requireRequestAuth(request)
+    if ('error' in result) {
+      return result.error
     }
+    const { auth } = result
 
-    const keys = userRole === 'ADMIN'
+    const keys = auth.role === 'ADMIN'
       ? await listAllApiKeysForAdmin()
-      : await listApiKeysByUser(userId)
+      : await listApiKeysByUser(auth.userId)
 
     const sanitized = keys.map(({ keyHash, ...rest }) => rest)
     return NextResponse.json({ keys: sanitized })
@@ -24,13 +24,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const userRole = request.headers.get('x-user-role')
-    if (!userId || !userRole) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const result = await requireRequestAuth(request)
+    if ('error' in result) {
+      return result.error
     }
+    const { auth } = result
 
-    if (userRole === 'ADMIN') {
+    if (auth.role === 'ADMIN') {
       return NextResponse.json({ error: 'Admins do not create personal API keys' }, { status: 403 })
     }
 
@@ -43,8 +43,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'name is required' }, { status: 400 })
     }
 
-    const result = await createApiKey(name.trim(), userId)
-    return NextResponse.json({ apiKey: result.key, data: result }, { status: 201 })
+    const created = await createApiKey(name.trim(), auth.userId)
+    return NextResponse.json({ apiKey: created.key, data: created }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json({ error: message }, { status: 500 })

@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { getApiKeyByIdForUser, revokeApiKeyForUser } from '@/lib/auth/api-key-service'
+import { requireRequestAuth } from '@/lib/auth/request-auth'
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const userRole = request.headers.get('x-user-role')
-    if (!userId || !userRole) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const result = await requireRequestAuth(request)
+    if ('error' in result) {
+      return result.error
     }
+    const { auth } = result
 
     const { id } = await params
     const body = await request.json()
@@ -20,9 +21,9 @@ export async function PUT(
       enabled?: boolean
     }
 
-    const existing = userRole === 'ADMIN'
+    const existing = auth.role === 'ADMIN'
       ? await prisma.apiKey.findUnique({ where: { id }, include: { quota: true } })
-      : await getApiKeyByIdForUser(id, userId)
+      : await getApiKeyByIdForUser(id, auth.userId)
 
     if (!existing) {
       return NextResponse.json({ error: 'API key not found' }, { status: 404 })
@@ -51,21 +52,21 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const userId = request.headers.get('x-user-id')
-    const userRole = request.headers.get('x-user-role')
-    if (!userId || !userRole) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const result = await requireRequestAuth(request)
+    if ('error' in result) {
+      return result.error
     }
+    const { auth } = result
 
     const { id } = await params
 
-    if (userRole === 'ADMIN') {
+    if (auth.role === 'ADMIN') {
       await prisma.apiKey.update({
         where: { id },
         data: { enabled: false },
       })
     } else {
-      await revokeApiKeyForUser(id, userId)
+      await revokeApiKeyForUser(id, auth.userId)
     }
 
     return NextResponse.json({ data: { revoked: true, id } })

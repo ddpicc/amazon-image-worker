@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { requireAdminRequest } from '@/lib/auth/request-auth'
 import { getProvider, updateProvider, deleteProvider } from '@/lib/providers/provider-service'
 
 export async function GET(
@@ -7,6 +8,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const result = await requireAdminRequest(_request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const { id } = await params
 
     const provider = await getProvider(id)
@@ -33,6 +39,11 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const { id } = await params
 
     const body = await request.json()
@@ -68,6 +79,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const result = await requireAdminRequest(_request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const { id } = await params
 
     await deleteProvider(id)

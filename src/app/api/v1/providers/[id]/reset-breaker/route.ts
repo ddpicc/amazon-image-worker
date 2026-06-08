@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdminRequest } from '@/lib/auth/request-auth'
 import { resetCircuitBreaker } from '@/lib/providers/circuit-breaker'
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const { id } = await params
 
     await resetCircuitBreaker(id)

@@ -119,9 +119,11 @@ export async function proxy(request: NextRequest) {
           'x-session-id': verified.session.id,
         })
       }
+
+      return NextResponse.next()
     }
 
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.next()
   }
 
   // ------------------------------------------------------------
@@ -139,21 +141,19 @@ export async function proxy(request: NextRequest) {
   )
 
   if (isAdminRoute) {
-    if (!sessionToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (sessionToken) {
+      const verified = await verifySession(request, sessionToken).catch(() => null)
+      if (verified?.user && verified.user.role === 'ADMIN') {
+        return withAuthHeaders(request, {
+          'x-auth-type': 'session',
+          'x-user-id': verified.user.id,
+          'x-user-role': verified.user.role,
+          'x-session-id': verified.session.id,
+        })
+      }
     }
 
-    const verified = await verifySession(request, sessionToken).catch(() => null)
-    if (!verified?.user || verified.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
-
-    return withAuthHeaders(request, {
-      'x-auth-type': 'session',
-      'x-user-id': verified.user.id,
-      'x-user-role': verified.user.role,
-      'x-session-id': verified.session.id,
-    })
+    return NextResponse.next()
   }
 
   // ------------------------------------------------------------
@@ -169,21 +169,19 @@ export async function proxy(request: NextRequest) {
   )
 
   if (isUserRoute) {
-    if (!sessionToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (sessionToken) {
+      const verified = await verifySession(request, sessionToken).catch(() => null)
+      if (verified?.user) {
+        return withAuthHeaders(request, {
+          'x-auth-type': 'session',
+          'x-user-id': verified.user.id,
+          'x-user-role': verified.user.role,
+          'x-session-id': verified.session.id,
+        })
+      }
     }
 
-    const verified = await verifySession(request, sessionToken).catch(() => null)
-    if (!verified?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    return withAuthHeaders(request, {
-      'x-auth-type': 'session',
-      'x-user-id': verified.user.id,
-      'x-user-role': verified.user.role,
-      'x-session-id': verified.session.id,
-    })
+    return NextResponse.next()
   }
 
   return NextResponse.next()

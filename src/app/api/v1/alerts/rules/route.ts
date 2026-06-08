@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { requireAdminRequest } from '@/lib/auth/request-auth'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const rules = await prisma.alertRule.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
@@ -21,6 +27,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const result = await requireAdminRequest(request)
+    if ('error' in result) {
+      return result.error
+    }
+
     const body = await request.json()
     const { name, conditionType, providerId, threshold, webhookUrl } = body as {
       name?: string

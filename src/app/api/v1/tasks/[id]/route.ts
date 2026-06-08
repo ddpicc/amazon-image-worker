@@ -1,30 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
+import { requireRequestAuth } from '@/lib/auth/request-auth'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const apiKeyId = request.headers.get('x-api-key-id')
-    const userId = request.headers.get('x-user-id')
-    const userRole = request.headers.get('x-user-role')
-    const authType = request.headers.get('x-auth-type')
-
-    if (!userId || !userRole || !authType) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const result = await requireRequestAuth(request)
+    if ('error' in result) {
+      return result.error
     }
+    const { auth } = result
 
     const { id } = await params
 
-    const where = userRole === 'ADMIN'
+    const where = auth.role === 'ADMIN'
       ? { id }
-      : authType === 'api-key' && apiKeyId
-        ? { id, apiKeyId }
+      : auth.authType === 'api-key' && auth.apiKeyId
+        ? { id, apiKeyId: auth.apiKeyId }
         : {
             id,
             apiKey: {
-              ownerUserId: userId,
+              ownerUserId: auth.userId,
             },
           }
 
