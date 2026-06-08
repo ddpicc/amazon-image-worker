@@ -25,6 +25,8 @@ export interface GenerateImageInput {
   entryApi?: string
   metadata?: Record<string, unknown>
   onStatus?: (message: string) => Promise<void> | void
+  requestId?: string
+  operationId?: string
 }
 
 export interface GenerateImageOutput {
@@ -77,7 +79,18 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
 }
 
 function getProviderBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/$/, '')
+  const normalized = baseUrl.trim().replace(/\/+$/, '')
+
+  try {
+    const url = new URL(normalized)
+    const pathname = url.pathname.replace(/\/+$/, '')
+    if (!pathname || pathname === '/') {
+      url.pathname = '/v1'
+    }
+    return url.toString().replace(/\/+$/, '')
+  } catch {
+    return normalized
+  }
 }
 
 function isEvolinkProvider(vendor: string, baseUrl: string): boolean {
@@ -140,6 +153,26 @@ function parseBase64Payload(base64: string, mimeType = 'image/png'): { buffer: B
     buffer: Buffer.from(base64, 'base64'),
     mimeType,
   }
+}
+
+function getCompatibleImageData(response: any): any {
+  if (Array.isArray(response?.data) && response.data.length > 0) {
+    return response.data[0]
+  }
+
+  if (Array.isArray(response?.images) && response.images.length > 0) {
+    return response.images[0]
+  }
+
+  if (Array.isArray(response?.output) && response.output.length > 0) {
+    return response.output[0]
+  }
+
+  if (response?.result && typeof response.result === 'object') {
+    return response.result
+  }
+
+  return null
 }
 
 function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
@@ -361,7 +394,6 @@ async function emitPersistedStatus(requestId: string, message: string) {
 export async function createImageGenerationRequest(input: GenerateImageInput): Promise<GenerateImageOutput> {
   const { apiKeyId, prompt, referenceImages, size = '1024x1024', aspectRatio, imageType, entryApi, metadata, onStatus } = input
   const mode = referenceImages.length > 0 ? 'edit' : 'generate'
-  const startedAt = Date.now()
 
   const operation = await startAiOperation({
     apiKeyId,
@@ -420,21 +452,50 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
     },
   })
 
+  return runImageGenerationForExistingRequest({
+    requestId: requestRecord.id,
+    operationId: operation.id,
+    apiKeyId,
+    prompt,
+    referenceImages,
+    size,
+    aspectRatio,
+    imageType,
+    metadata,
+    onStatus,
+  })
+}
+
+async function runImageGenerationForExistingRequest(params: {
+  requestId: string
+  operationId: string
+  apiKeyId: string
+  prompt: string
+  referenceImages: Array<{ data: string; mediaType: string }>
+  size: RenderSize
+  aspectRatio?: AspectRatio
+  imageType?: string
+  metadata?: Record<string, unknown>
+  onStatus?: (message: string) => Promise<void> | void
+}): Promise<GenerateImageOutput> {
+  const { requestId, operationId, apiKeyId, prompt, referenceImages, size, aspectRatio, imageType, onStatus } = params
+  const mode = referenceImages.length > 0 ? 'edit' : 'generate'
+  const startedAt = Date.now()
+
   const emitStatus = async (message: string) => {
-    await emitPersistedStatus(requestRecord.id, message)
+    await emitPersistedStatus(requestId, message)
     if (onStatus) {
       await onStatus(message)
     }
   }
 
-  // --- Smart provider selection ---
   const scoredProviders = await selectProviders()
   const providers = scoredProviders.map(sp => sp.provider)
 
   if (providers.length === 0) {
     const errorMessage = 'No enabled image providers are configured'
     await prisma.imageGenerationRequest.update({
-      where: { id: requestRecord.id },
+      where: { id: requestId },
       data: {
         status: 'FAILED',
         errorMessage,
@@ -444,7 +505,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
       },
     })
     await completeAiOperation({
-      operationId: operation.id,
+      operationId: operationId,
       status: 'FAILED',
       finalPrompt: prompt,
       errorMessage,
@@ -461,7 +522,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
   const attemptedLines: RouteSummary['attemptedLines'] = []
 
   console.info('[image.generate] request start', {
-    requestId: requestRecord.id,
+    requestId: requestId,
     mode,
     size,
     aspectRatio: aspectRatio || 'unspecified',
@@ -494,7 +555,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
     }
 
     const operationAttempt = await startAiOperationAttempt({
-      operationId: operation.id,
+      operationId: operationId,
       providerType: 'IMAGE',
       providerId: provider.id,
       providerName: provider.name,
@@ -507,7 +568,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
 
     const attempt = await prisma.imageGenerationAttempt.create({
       data: {
-        requestId: requestRecord.id,
+        requestId: requestId,
         operationAttemptId: operationAttempt.id,
         providerId: provider.id,
         baseUrl: provider.baseUrl,
@@ -525,7 +586,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
         const revisedPrompt = prompt
         const extracted = isEvolinkProvider(provider.vendor, provider.baseUrl)
           ? await requestEvolinkImage({
-              requestId: requestRecord.id,
+              requestId: requestId,
               apiKey,
               baseUrl: provider.baseUrl,
               model: provider.model,
@@ -548,18 +609,23 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
                     size,
                   }))
 
-              if (!response.data || response.data.length === 0) {
-                throw new Error('No image data returned from upstream provider')
+              const imageData = getCompatibleImageData(response)
+              if (!imageData) {
+                throw new Error(`${provider.name}: No image data returned from upstream provider. Raw keys: ${Object.keys(response || {}).join(',')}`)
               }
 
-              const imageData = response.data[0] as any
-              return {
-                ...(await extractUpstreamImage(imageData)),
-                revisedPrompt: imageData.revised_prompt || prompt,
+              try {
+                return {
+                  ...(await extractUpstreamImage(imageData)),
+                  revisedPrompt: imageData.revised_prompt || imageData.revisedPrompt || prompt,
+                }
+              } catch (extractError) {
+                const extractMessage = extractError instanceof Error ? extractError.message : String(extractError)
+                throw new Error(`${provider.name}: ${extractMessage}. imageData keys: ${Object.keys(imageData || {}).join(',')}`)
               }
             })()
 
-        const cosKey = buildCosKey(requestRecord.id, extracted.mimeType)
+        const cosKey = buildCosKey(requestId, extracted.mimeType)
         const uploaded = await uploadBufferToCos({
           buffer: extracted.buffer,
           key: cosKey,
@@ -569,8 +635,8 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
 
         await prisma.generatedImageAsset.create({
           data: {
-            requestId: requestRecord.id,
-            operationId: operation.id,
+            requestId: requestId,
+            operationId: operationId,
             cosUrl: uploaded.url,
             cosKey: uploaded.key,
             mimeType: uploaded.mimeType,
@@ -615,7 +681,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
       })
 
       await prisma.imageGenerationRequest.update({
-        where: { id: requestRecord.id },
+        where: { id: requestId },
         data: {
           selectedProviderId: provider.id,
           selectedProviderName: provider.name,
@@ -636,7 +702,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
       })
 
       await completeAiOperation({
-        operationId: operation.id,
+        operationId: operationId,
         status: 'SUCCEEDED',
         finalPrompt: prompt,
         outputSummary: {
@@ -675,8 +741,8 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
       await emitStatus(`${lineName(index + 1)}生成成功`)
 
       return {
-        requestId: requestRecord.id,
-        operationId: operation.id,
+        requestId: requestId,
+        operationId: operationId,
         imageUrl: attemptResult.uploaded.url,
         revisedPrompt: attemptResult.revisedPrompt,
         size,
@@ -740,7 +806,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
 
   const errorMessage = errors.join(' | ') || 'All image providers failed'
   await prisma.imageGenerationRequest.update({
-    where: { id: requestRecord.id },
+    where: { id: requestId },
     data: {
       attemptCount: providers.length,
       status: 'FAILED',
@@ -755,7 +821,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
   })
 
   await completeAiOperation({
-    operationId: operation.id,
+    operationId: operationId,
     status: 'FAILED',
     finalPrompt: prompt,
     errorMessage,
@@ -921,7 +987,13 @@ export async function executeQueuedImageGeneration(requestId: string) {
   }))
 
   try {
-    return await createImageGenerationRequest({
+    if (!request.operationId) {
+      throw new Error('Queued image generation request is missing operationId')
+    }
+
+    return await runImageGenerationForExistingRequest({
+      requestId: request.id,
+      operationId: request.operationId,
       apiKeyId: request.apiKeyId,
       prompt: payload.prompt,
       referenceImages,

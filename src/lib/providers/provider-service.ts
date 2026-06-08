@@ -3,6 +3,24 @@ import { prisma } from '../db/prisma'
 import { encryptSecret } from '../crypto'
 import { scoreProviders, ScoredProvider, ProviderRollingStats, DEFAULT_WEIGHTS, ScoringWeights } from './provider-scoring'
 
+function normalizeProviderBaseUrl(baseUrl: string): string {
+  const normalized = baseUrl.trim().replace(/\/+$/, '')
+  let url: URL
+
+  try {
+    url = new URL(normalized)
+  } catch {
+    throw new Error('Invalid provider baseUrl')
+  }
+
+  const pathname = url.pathname.replace(/\/+$/, '')
+  if (!pathname || pathname === '/') {
+    url.pathname = '/v1'
+  }
+
+  return url.toString().replace(/\/+$/, '')
+}
+
 // --- Provider Selection (Smart Routing) ---
 
 export async function selectProviders(weights?: ScoringWeights): Promise<ScoredProvider[]> {
@@ -105,7 +123,7 @@ export async function createProvider(data: {
     data: {
       name: data.name,
       vendor: data.vendor,
-      baseUrl: data.baseUrl,
+      baseUrl: normalizeProviderBaseUrl(data.baseUrl),
       model: data.model,
       priority: data.priority ?? 100,
       apiKeyCiphertext,
@@ -123,9 +141,14 @@ export async function updateProvider(id: string, data: {
   enabled?: boolean
   estimatedCostPerReq?: number
 }) {
+  const updateData = {
+    ...data,
+    ...(data.baseUrl ? { baseUrl: normalizeProviderBaseUrl(data.baseUrl) } : {}),
+  }
+
   return prisma.imageProvider.update({
     where: { id },
-    data,
+    data: updateData,
   })
 }
 
