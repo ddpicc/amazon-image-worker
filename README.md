@@ -73,12 +73,23 @@ PROVIDER_KEY_ENCRYPTION_KEY=
 # 应用密钥（API Key 哈希）
 APP_SECRET=
 
+# 对象存储后端：cos | r2
+STORAGE_BACKEND=cos
+
 # 腾讯云 COS
 COS_SECRET_ID=
 COS_SECRET_KEY=
 COS_BUCKET=
 COS_REGION=ap-guangzhou
 COS_PUBLIC_BASE_URL=    # 可选
+
+# Cloudflare R2（仅 STORAGE_BACKEND=r2 时需要）
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=
+R2_PUBLIC_BASE_URL=
+R2_ENDPOINT=            # 可选，默认 https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
 ```
 
 ## 运行
@@ -97,6 +108,27 @@ npm run build:web
 ```
 
 生产部署需要同时运行两个进程：Worker + Web Server。
+
+## 对象存储切换
+
+默认后端是腾讯云 COS。
+
+如果要切到 Cloudflare R2：
+
+```bash
+STORAGE_BACKEND=r2
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=
+R2_PUBLIC_BASE_URL=
+```
+
+说明：
+
+- `R2_PUBLIC_BASE_URL` 应该是你给桶配置的公开访问域名或自定义域名
+- `R2_ENDPOINT` 可选，不填时默认使用 `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`
+- 数据库里的 `cosUrl` / `cosKey` 字段名会继续沿用，避免迁移历史数据，但实际上传后端由 `STORAGE_BACKEND` 决定
 
 ## API 端点
 

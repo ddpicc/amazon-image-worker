@@ -1,6 +1,5 @@
 import OpenAI from 'openai'
 import { Prisma } from '@prisma/client'
-import { uploadBufferToCos } from './cos'
 import { decryptSecret } from './crypto'
 import { StoredReferenceImage } from './amazon-workflow'
 import { AspectRatio, RenderSize } from './image-options'
@@ -11,6 +10,7 @@ import { classifyError } from './providers/error-classifier'
 import { applyCooldown, clearCooldown } from './providers/cooldown'
 import { checkCircuitBreaker } from './providers/circuit-breaker'
 import { prisma } from './db/prisma'
+import { getObjectStorageBackend, uploadBufferToObjectStorage } from './object-storage'
 
 export interface GenerateImageInput {
   apiKeyId: string
@@ -251,7 +251,7 @@ async function uploadReferenceImagesForProvider(params: {
     const ext = getExtensionFromMimeType(image.mediaType)
     const key = `provider-inputs/${env}/${yyyy}/${mm}/${dd}/${params.requestId}-${index + 1}.${ext}`
 
-    const uploaded = await uploadBufferToCos({
+    const uploaded = await uploadBufferToObjectStorage({
       buffer,
       key,
       contentType: image.mediaType || 'image/jpeg',
@@ -528,6 +528,7 @@ async function runImageGenerationForExistingRequest(params: {
     aspectRatio: aspectRatio || 'unspecified',
     promptLength: prompt.length,
     referenceImageCount: referenceImages.length,
+    storageBackend: getObjectStorageBackend(),
     providerCount: providers.length,
     providerScores: scoredProviders.map(sp => ({
       name: sp.provider.name,
@@ -632,7 +633,7 @@ async function runImageGenerationForExistingRequest(params: {
 
         const cosKey = buildCosKey(requestId, extracted.mimeType)
         const cosUploadStartedAt = Date.now()
-        const uploaded = await uploadBufferToCos({
+        const uploaded = await uploadBufferToObjectStorage({
           buffer: extracted.buffer,
           key: cosKey,
           contentType: extracted.mimeType,
@@ -679,6 +680,7 @@ async function runImageGenerationForExistingRequest(params: {
             returnedImageUrlKind: attemptResult.returnedImageUrlKind,
             uploadedUrl: attemptResult.uploaded.url,
             uploadedBytes: attemptResult.uploaded.bytes,
+            storageBackend: attemptResult.uploaded.backend,
             revisedPrompt: attemptResult.revisedPrompt,
             timing: attemptResult.timing,
           },
@@ -693,6 +695,7 @@ async function runImageGenerationForExistingRequest(params: {
           returnedImageUrlKind: attemptResult.returnedImageUrlKind,
           uploadedUrl: attemptResult.uploaded.url,
           uploadedBytes: attemptResult.uploaded.bytes,
+          storageBackend: attemptResult.uploaded.backend,
           revisedPrompt: attemptResult.revisedPrompt,
           timing: attemptResult.timing,
         },
@@ -711,6 +714,7 @@ async function runImageGenerationForExistingRequest(params: {
             selectedProviderName: provider.name,
             returnedImageUrlKind: attemptResult.returnedImageUrlKind,
             uploadedUrl: attemptResult.uploaded.url,
+            storageBackend: attemptResult.uploaded.backend,
             timing: {
               ...attemptResult.timing,
               requestTotalMs: Date.now() - startedAt,
@@ -738,6 +742,7 @@ async function runImageGenerationForExistingRequest(params: {
           revisedPrompt: attemptResult.revisedPrompt,
           returnedImageUrlKind: attemptResult.returnedImageUrlKind,
           uploadedUrl: attemptResult.uploaded.url,
+          storageBackend: attemptResult.uploaded.backend,
           timing: {
             ...attemptResult.timing,
             requestTotalMs: Date.now() - startedAt,

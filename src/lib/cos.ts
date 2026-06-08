@@ -43,7 +43,7 @@ export async function uploadBufferToCos(params: {
   key: string
   contentType: string
   timeoutMs?: number
-}): Promise<{ url: string; key: string; bytes: number; mimeType: string }> {
+}): Promise<{ url: string; key: string; bytes: number; mimeType: string; backend: 'cos' }> {
   const bucket = requireEnv('COS_BUCKET')
   const region = requireEnv('COS_REGION')
   const timeoutMs = params.timeoutMs ?? COS_UPLOAD_TIMEOUT_MS
@@ -79,5 +79,6 @@ export async function uploadBufferToCos(params: {
     key: params.key,
     bytes: params.buffer.byteLength,
     mimeType: params.contentType,
+    backend: 'cos',
   }
 }
