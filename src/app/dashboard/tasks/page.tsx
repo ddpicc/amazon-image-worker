@@ -15,6 +15,7 @@ interface Task {
   durationMs: number | null
   createdAt: string
   errorMessage: string | null
+  responseSnapshotJson?: ResponseSnapshot | null
   apiKey?: { id: string; name: string; keyPrefix: string } | null
   attempts: TaskAttempt[]
   assets: TaskAsset[]
@@ -32,6 +33,7 @@ interface TaskAttempt {
   errorType: string | null
   startedAt: string
   completedAt: string | null
+  responseSnapshotJson?: ResponseSnapshot | null
 }
 
 interface TaskAsset {
@@ -48,6 +50,23 @@ interface TasksResponse {
   page: number
   limit: number
   totalPages: number
+}
+
+interface TimingSnapshot {
+  decryptMs?: number
+  upstreamMs?: number
+  cosUploadMs?: number
+  assetPersistMs?: number
+  totalInnerMs?: number
+  attemptTotalMs?: number
+  requestTotalMs?: number
+}
+
+interface ResponseSnapshot {
+  timing?: TimingSnapshot | null
+  returnedImageUrlKind?: string | null
+  uploadedBytes?: number | null
+  uploadedUrl?: string | null
 }
 
 const STATUS_TABS: { label: string; value: TaskStatus | 'ALL' }[] = [
@@ -76,6 +95,44 @@ function formatDuration(ms: number | null): string {
   if (ms == null) return '-'
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
+}
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null) return '-'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function TimingGrid({ timing }: { timing?: TimingSnapshot | null }) {
+  if (!timing) {
+    return <p className="text-xs text-gray-400">No timing data</p>
+  }
+
+  const items: Array<{ label: string; value: number | undefined }> = [
+    { label: 'Decrypt', value: timing.decryptMs },
+    { label: 'Upstream', value: timing.upstreamMs },
+    { label: 'COS Upload', value: timing.cosUploadMs },
+    { label: 'Asset Persist', value: timing.assetPersistMs },
+    { label: 'Inner Total', value: timing.totalInnerMs },
+    { label: 'Attempt Total', value: timing.attemptTotalMs },
+    { label: 'Request Total', value: timing.requestTotalMs },
+  ].filter((item) => item.value != null)
+
+  if (items.length === 0) {
+    return <p className="text-xs text-gray-400">No timing data</p>
+  }
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {items.map((item) => (
+        <div key={item.label} className="rounded border border-gray-200 bg-white px-3 py-2">
+          <p className="text-[11px] uppercase tracking-wide text-gray-500">{item.label}</p>
+          <p className="mt-1 text-sm font-medium text-gray-900">{formatDuration(item.value ?? null)}</p>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export default function TasksPage() {
@@ -232,6 +289,21 @@ function TaskRow({ task, i, expanded, onToggle, onRetry, retrying }: { task: Tas
                 <p className="text-sm text-gray-800 bg-white rounded border border-gray-200 p-3 whitespace-pre-wrap">{task.prompt}</p>
               </div>
 
+              <div>
+                <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Timing Breakdown</h4>
+                <div className="space-y-2">
+                  <TimingGrid timing={task.responseSnapshotJson?.timing} />
+                  {(task.responseSnapshotJson?.returnedImageUrlKind || task.responseSnapshotJson?.uploadedUrl) && (
+                    <div className="rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span>Result Kind: {task.responseSnapshotJson?.returnedImageUrlKind || '-'}</span>
+                        <span>Uploaded Size: {formatBytes(task.responseSnapshotJson?.uploadedBytes)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {task.attempts && task.attempts.length > 0 && (
                 <div>
                   <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Attempts ({task.attempts.length})</h4>
@@ -243,6 +315,17 @@ function TaskRow({ task, i, expanded, onToggle, onRetry, retrying }: { task: Tas
                           <span>{attempt.model}</span>
                           <StatusBadge status={attempt.status === 'STARTED' ? 'PROCESSING' : attempt.status === 'SUCCEEDED' ? 'SUCCEEDED' : 'FAILED'} />
                           <span className="text-xs text-gray-400">{formatDuration(attempt.durationMs)}</span>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          <TimingGrid timing={attempt.responseSnapshotJson?.timing} />
+                          {(attempt.responseSnapshotJson?.returnedImageUrlKind || attempt.responseSnapshotJson?.uploadedBytes != null) && (
+                            <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                <span>Result Kind: {attempt.responseSnapshotJson?.returnedImageUrlKind || '-'}</span>
+                                <span>Uploaded Size: {formatBytes(attempt.responseSnapshotJson?.uploadedBytes)}</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                         {attempt.errorMessage && <p className="mt-1 text-xs text-red-600">{attempt.errorMessage}</p>}
                         {attempt.errorType && <p className="mt-0.5 text-xs text-orange-600">Type: {attempt.errorType}</p>}
