@@ -104,7 +104,11 @@ export default function SettingsPage() {
 
       if (keysRes?.ok) {
         const d = await keysRes.json()
-        setApiKeys(Array.isArray(d) ? d : d.keys ?? d.data ?? [])
+        const rawKeys = Array.isArray(d) ? d : d.keys ?? d.data ?? []
+        const visibleKeys = currentUser.role === 'ADMIN'
+          ? rawKeys.filter((key: { name?: string; enabled?: boolean }) => !(key.name?.startsWith('Admin Test Key ') && key.enabled === false))
+          : rawKeys
+        setApiKeys(visibleKeys)
       }
       if (currentUser.role === 'ADMIN' && rulesRes?.ok) {
         const d = await rulesRes.json()

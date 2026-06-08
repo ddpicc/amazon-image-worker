@@ -96,17 +96,17 @@ export async function proxy(request: NextRequest) {
       const rawKey = authHeader.slice('Bearer '.length)
       const apiKey = await verifyApiKey(request, rawKey).catch(() => null)
 
-      if (!apiKey) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      if (apiKey) {
+        return withAuthHeaders(request, {
+          'x-auth-type': 'api-key',
+          'x-api-key-id': apiKey.id,
+          'x-api-key-name': apiKey.name,
+          'x-user-id': apiKey.ownerUserId,
+          'x-user-role': apiKey.ownerUserRole ?? 'USER',
+        })
       }
 
-      return withAuthHeaders(request, {
-        'x-auth-type': 'api-key',
-        'x-api-key-id': apiKey.id,
-        'x-api-key-name': apiKey.name,
-        'x-user-id': apiKey.ownerUserId,
-        'x-user-role': apiKey.ownerUserRole ?? 'USER',
-      })
+      return NextResponse.next()
     }
 
     if (sessionToken) {
