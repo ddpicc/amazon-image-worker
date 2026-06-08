@@ -1,25 +1,37 @@
-/**
- * Dashboard authentication helpers — client-side cookie management
- * for the admin_token used by middleware.
- */
+'use client'
 
-export function getAdminToken(): string | null {
-  const match = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith('admin_token='))
-  if (!match) return null
-  return match.split('=')[1] ?? null
+export interface DashboardUser {
+  id: string
+  email: string
+  name: string | null
+  role: 'ADMIN' | 'USER'
+  enabled: boolean
 }
 
-export function isAuthenticated(): boolean {
-  return getAdminToken() !== null
+export async function fetchCurrentUser(): Promise<DashboardUser | null> {
+  const res = await fetch('/api/v1/auth/me', {
+    credentials: 'include',
+    cache: 'no-store',
+  })
+
+  if (!res.ok) return null
+
+  const data = await res.json().catch(() => null)
+  return data?.user ?? null
+}
+
+export async function isAuthenticated(): Promise<boolean> {
+  const user = await fetchCurrentUser()
+  return !!user
 }
 
 export async function logout(): Promise<void> {
   try {
-    await fetch('/api/v1/auth/logout', { method: 'POST' })
+    await fetch('/api/v1/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+    })
   } finally {
-    document.cookie = 'admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
     window.location.href = '/dashboard/login'
   }
 }
