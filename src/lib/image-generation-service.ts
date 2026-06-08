@@ -582,8 +582,12 @@ async function runImageGenerationForExistingRequest(params: {
 
     try {
       const attemptResult = await withTimeout(async () => {
+        const phaseStartedAt = Date.now()
         const apiKey = decryptSecret(provider.apiKeyCiphertext)
+        const decryptMs = Date.now() - phaseStartedAt
+
         const revisedPrompt = prompt
+        const upstreamStartedAt = Date.now()
         const extracted = isEvolinkProvider(provider.vendor, provider.baseUrl)
           ? await requestEvolinkImage({
               requestId: requestId,
@@ -624,15 +628,19 @@ async function runImageGenerationForExistingRequest(params: {
                 throw new Error(`${provider.name}: ${extractMessage}. imageData keys: ${Object.keys(imageData || {}).join(',')}`)
               }
             })()
+        const upstreamMs = Date.now() - upstreamStartedAt
 
         const cosKey = buildCosKey(requestId, extracted.mimeType)
+        const cosUploadStartedAt = Date.now()
         const uploaded = await uploadBufferToCos({
           buffer: extracted.buffer,
           key: cosKey,
           contentType: extracted.mimeType,
           timeoutMs: PROVIDER_TIMEOUT_MS,
         })
+        const cosUploadMs = Date.now() - cosUploadStartedAt
 
+        const assetPersistStartedAt = Date.now()
         await prisma.generatedImageAsset.create({
           data: {
             requestId: requestId,
@@ -644,11 +652,19 @@ async function runImageGenerationForExistingRequest(params: {
             upstreamSourceUrl: extracted.returnedKind === 'remote-url' ? 'remote-upstream' : null,
           },
         })
+        const assetPersistMs = Date.now() - assetPersistStartedAt
 
         return {
           uploaded,
           revisedPrompt: 'revisedPrompt' in extracted ? extracted.revisedPrompt : revisedPrompt,
           returnedImageUrlKind: extracted.returnedKind,
+          timing: {
+            decryptMs,
+            upstreamMs,
+            cosUploadMs,
+            assetPersistMs,
+            totalInnerMs: Date.now() - phaseStartedAt,
+          },
         }
       }, PROVIDER_TIMEOUT_MS, `Provider timed out after ${PROVIDER_TIMEOUT_MS}ms`)
 
@@ -664,6 +680,7 @@ async function runImageGenerationForExistingRequest(params: {
             uploadedUrl: attemptResult.uploaded.url,
             uploadedBytes: attemptResult.uploaded.bytes,
             revisedPrompt: attemptResult.revisedPrompt,
+            timing: attemptResult.timing,
           },
           completedAt: new Date(),
         },
@@ -677,6 +694,7 @@ async function runImageGenerationForExistingRequest(params: {
           uploadedUrl: attemptResult.uploaded.url,
           uploadedBytes: attemptResult.uploaded.bytes,
           revisedPrompt: attemptResult.revisedPrompt,
+          timing: attemptResult.timing,
         },
       })
 
@@ -693,6 +711,11 @@ async function runImageGenerationForExistingRequest(params: {
             selectedProviderName: provider.name,
             returnedImageUrlKind: attemptResult.returnedImageUrlKind,
             uploadedUrl: attemptResult.uploaded.url,
+            timing: {
+              ...attemptResult.timing,
+              requestTotalMs: Date.now() - startedAt,
+              attemptTotalMs: attemptDuration,
+            },
           },
           status: 'SUCCEEDED',
           statusMessage: `${lineName(index + 1)}生成成功`,
@@ -715,6 +738,11 @@ async function runImageGenerationForExistingRequest(params: {
           revisedPrompt: attemptResult.revisedPrompt,
           returnedImageUrlKind: attemptResult.returnedImageUrlKind,
           uploadedUrl: attemptResult.uploaded.url,
+          timing: {
+            ...attemptResult.timing,
+            requestTotalMs: Date.now() - startedAt,
+            attemptTotalMs: attemptDuration,
+          },
         },
       })
 
@@ -772,6 +800,9 @@ async function runImageGenerationForExistingRequest(params: {
           responseSnapshotJson: {
             errorMessage: message,
             errorType,
+            timing: {
+              attemptTotalMs: attemptDuration,
+            },
           },
           completedAt: new Date(),
         },
@@ -784,6 +815,9 @@ async function runImageGenerationForExistingRequest(params: {
         responseSnapshot: {
           errorMessage: message,
           errorType,
+          timing: {
+            attemptTotalMs: attemptDuration,
+          },
         },
       }).catch(() => undefined)
 
