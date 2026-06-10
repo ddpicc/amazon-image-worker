@@ -13,6 +13,7 @@ interface Provider {
   model: string
   priority: number
   enabled: boolean
+  maxConcurrent: number
   totalAttempts: number
   successfulAttempts: number
   avgDurationMs: number
@@ -32,6 +33,7 @@ interface EditFormData {
   model: string
   priority: number
   estimatedCostPerReq: number
+  maxConcurrent: number
 }
 
 interface AddFormData {
@@ -42,6 +44,7 @@ interface AddFormData {
   priority: number
   apiKeyPlaintext: string
   estimatedCostPerReq: number
+  maxConcurrent: number
 }
 
 const emptyAdd: AddFormData = {
@@ -52,6 +55,7 @@ const emptyAdd: AddFormData = {
   priority: 100,
   apiKeyPlaintext: '',
   estimatedCostPerReq: 0,
+  maxConcurrent: 3,
 }
 
 function successRate(p: Provider): string {
@@ -84,7 +88,7 @@ export default function ProvidersPage() {
   const [secretCopied, setSecretCopied] = useState(false)
   const [addForm, setAddForm] = useState<AddFormData>({ ...emptyAdd })
   const [editForm, setEditForm] = useState<EditFormData>({
-    name: '', vendor: '', baseUrl: '', model: '', priority: 100, estimatedCostPerReq: 0,
+    name: '', vendor: '', baseUrl: '', model: '', priority: 100, estimatedCostPerReq: 0, maxConcurrent: 3,
   })
   const [submitting, setSubmitting] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
@@ -185,6 +189,7 @@ export default function ProvidersPage() {
       model: p.model,
       priority: p.priority,
       estimatedCostPerReq: p.estimatedCostPerReq,
+      maxConcurrent: p.maxConcurrent,
     })
   }
 
@@ -278,6 +283,7 @@ export default function ProvidersPage() {
                 <th className="px-4 py-2.5 font-medium">Vendor</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
                 <th className="px-4 py-2.5 font-medium">Priority</th>
+                <th className="px-4 py-2.5 font-medium">Max Concurrent</th>
                 <th className="px-4 py-2.5 font-medium">Success Rate</th>
                 <th className="px-4 py-2.5 font-medium">Avg Latency</th>
                 <th className="px-4 py-2.5 font-medium">Cost/Req</th>
@@ -286,13 +292,14 @@ export default function ProvidersPage() {
             </thead>
             <tbody>
               {providers.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No providers configured</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">No providers configured</td></tr>
               ) : providers.map((p, i) => (
                 <tr key={p.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}>
                   <td className="px-4 py-2.5 font-medium text-gray-900">{p.name}</td>
                   <td className="px-4 py-2.5 text-gray-600">{p.vendor}</td>
                   <td className="px-4 py-2.5"><StatusBadge provider={p} /></td>
                   <td className="px-4 py-2.5 text-gray-600">{p.priority}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{p.maxConcurrent}</td>
                   <td className="px-4 py-2.5 text-gray-600">{successRate(p)}</td>
                   <td className="px-4 py-2.5 text-gray-600">{p.avgDurationMs > 0 ? `${p.avgDurationMs}ms` : 'N/A'}</td>
                   <td className="px-4 py-2.5 text-gray-600">${p.estimatedCostPerReq.toFixed(4)}</td>
@@ -320,8 +327,9 @@ export default function ProvidersPage() {
             <Field label="Vendor"><input type="text" value={addForm.vendor} onChange={(e) => setAddForm({ ...addForm, vendor: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Base URL"><input type="url" value={addForm.baseUrl} onChange={(e) => setAddForm({ ...addForm, baseUrl: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Model"><input type="text" value={addForm.model} onChange={(e) => setAddForm({ ...addForm, model: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <Field label="Priority"><input type="number" value={addForm.priority} onChange={(e) => setAddForm({ ...addForm, priority: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+              <Field label="Max Concurrent"><input type="number" min="1" value={addForm.maxConcurrent} onChange={(e) => setAddForm({ ...addForm, maxConcurrent: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
               <Field label="Cost/Req ($)"><input type="number" step="0.0001" value={addForm.estimatedCostPerReq} onChange={(e) => setAddForm({ ...addForm, estimatedCostPerReq: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" /></Field>
             </div>
             <Field label="API Key"><input type="password" value={addForm.apiKeyPlaintext} onChange={(e) => setAddForm({ ...addForm, apiKeyPlaintext: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
@@ -340,8 +348,9 @@ export default function ProvidersPage() {
             <Field label="Vendor"><input type="text" value={editForm.vendor} onChange={(e) => setEditForm({ ...editForm, vendor: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Base URL"><input type="url" value={editForm.baseUrl} onChange={(e) => setEditForm({ ...editForm, baseUrl: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Model"><input type="text" value={editForm.model} onChange={(e) => setEditForm({ ...editForm, model: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <Field label="Priority"><input type="number" value={editForm.priority} onChange={(e) => setEditForm({ ...editForm, priority: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+              <Field label="Max Concurrent"><input type="number" min="1" value={editForm.maxConcurrent} onChange={(e) => setEditForm({ ...editForm, maxConcurrent: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
               <Field label="Cost/Req ($)"><input type="number" step="0.0001" value={editForm.estimatedCostPerReq} onChange={(e) => setEditForm({ ...editForm, estimatedCostPerReq: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">

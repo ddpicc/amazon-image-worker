@@ -20,6 +20,7 @@ export async function GET() {
         name: session.user.name,
         role: session.user.role,
         enabled: session.user.enabled,
+        balance: Number(session.user.balance ?? 0),
       },
     })
   } catch (error) {
@@ -77,6 +78,7 @@ export async function PUT(request: NextRequest) {
         name: true,
         role: true,
         enabled: true,
+        balance: true,
       },
     })
 

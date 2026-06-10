@@ -5,6 +5,8 @@ import { getImageGenerationQueueName, ImageGenerationQueueJobData } from '../lib
 import { prisma } from '../lib/db/prisma'
 import { snapshotProviderStats } from '../lib/providers/stats-snapshot'
 import { resetDailyQuotas, resetMonthlyQuotas } from '../lib/auth/quota-reset'
+import { refundBalance } from '../lib/billing/billing-service'
+import { dispatchImageTaskCallback } from '../lib/image-task-callback'
 
 const QUEUE_NAME = getImageGenerationQueueName()
 
@@ -111,12 +113,70 @@ async function main() {
           requestId,
           error: error instanceof Error ? error.message : String(error),
         })
+
+        try {
+          const request = await prisma.imageGenerationRequest.findUnique({
+            where: { id: requestId },
+            select: {
+              id: true,
+              cost: true,
+              costStatus: true,
+              callbackUrl: true,
+              apiKey: {
+                select: {
+                  ownerUserId: true,
+                },
+              },
+            },
+          })
+
+          if (
+            request?.apiKey.ownerUserId &&
+            request.cost !== null &&
+            request.costStatus === 'CHARGED'
+          ) {
+            await refundBalance(
+              request.apiKey.ownerUserId,
+              Number(request.cost),
+              request.id,
+              'generation_failed',
+            )
+            console.info('[worker] refunded failed request', {
+              requestId,
+              amount: Number(request.cost),
+            })
+          }
+
+          if (request?.callbackUrl) {
+            const latestTask = await prisma.imageGenerationRequest.findUnique({
+              where: { id: requestId },
+              include: {
+                assets: {
+                  orderBy: { createdAt: 'asc' },
+                },
+              },
+            })
+
+            if (latestTask) {
+              await dispatchImageTaskCallback({
+                callbackUrl: request.callbackUrl,
+                task: latestTask,
+              }).catch(() => undefined)
+            }
+          }
+        } catch (refundError) {
+          console.error('[worker] refund failed', {
+            requestId,
+            error: refundError instanceof Error ? refundError.message : String(refundError),
+          })
+        }
+
         throw error
       }
     },
     {
       connection: { url: redisUrl } as any,
-      concurrency: 3,
+      concurrency: parseInt(process.env.WORKER_CONCURRENCY || '10', 10),
     },
   )
 

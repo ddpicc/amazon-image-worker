@@ -17,8 +17,12 @@ interface Task {
   errorMessage: string | null
   responseSnapshotJson?: ResponseSnapshot | null
   apiKey?: { id: string; name: string; keyPrefix: string } | null
-  attempts: TaskAttempt[]
-  assets: TaskAsset[]
+  attempts?: TaskAttempt[]
+  assets?: TaskAsset[]
+  _count?: {
+    attempts: number
+    assets: number
+  }
 }
 
 interface TaskAttempt {
@@ -139,6 +143,8 @@ export default function TasksPage() {
   const router = useRouter()
   const [user, setUser] = useState<DashboardUser | null>(null)
   const [data, setData] = useState<TasksResponse | null>(null)
+  const [details, setDetails] = useState<Record<string, Task>>({})
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'ALL'>('ALL')
@@ -151,7 +157,10 @@ export default function TasksPage() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(limit) })
       if (statusFilter !== 'ALL') params.set('status', statusFilter)
-      const res = await fetch(`/api/v1/tasks?${params}`)
+      const res = await fetch(`/api/v1/tasks?${params}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
       if (res.status === 401) {
         router.push('/dashboard/login')
         return
@@ -163,6 +172,7 @@ export default function TasksPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
       setData(json)
+      setDetails({})
       setError('')
     } catch {
       setError('Failed to load tasks')
@@ -172,15 +182,26 @@ export default function TasksPage() {
   }, [page, statusFilter, router])
 
   useEffect(() => {
+    let mounted = true
     fetchCurrentUser().then((u) => {
+      if (!mounted) return
       if (!u) {
         router.push('/dashboard/login')
         return
       }
       setUser(u)
-      fetchTasks()
     })
-  }, [fetchTasks, router])
+    return () => {
+      mounted = false
+    }
+  }, [router])
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+    fetchTasks()
+  }, [user, fetchTasks])
 
   useEffect(() => {
     if (!user || !hasActiveTasks) {
@@ -200,6 +221,40 @@ export default function TasksPage() {
     setStatusFilter(value)
     setPage(1)
     setExpandedId(null)
+  }
+
+  async function handleToggle(task: Task) {
+    const nextExpanded = expandedId === task.id ? null : task.id
+    setExpandedId(nextExpanded)
+
+    if (nextExpanded !== task.id || details[task.id]) {
+      return
+    }
+
+    try {
+      setDetailLoadingId(task.id)
+      const res = await fetch(`/api/v1/tasks/${task.id}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      if (res.status === 401) {
+        router.push('/dashboard/login')
+        return
+      }
+      if (res.status === 403) {
+        router.push('/dashboard')
+        return
+      }
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+      const json = await res.json()
+      setDetails((current) => ({ ...current, [task.id]: json.data }))
+    } catch {
+      setError('Failed to load task details')
+    } finally {
+      setDetailLoadingId((current) => (current === task.id ? null : current))
+    }
   }
 
   async function handleRetry(_task: Task) {
@@ -247,7 +302,18 @@ export default function TasksPage() {
               {!data || data.tasks.length === 0 ? (
                 <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No tasks found</td></tr>
               ) : data.tasks.map((task, i) => (
-                <TaskRow key={task.id} task={task} i={i} expanded={expandedId === task.id} onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)} onRetry={handleRetry} retrying={false} />
+                <TaskRow
+                  key={task.id}
+                  task={details[task.id] ?? task}
+                  summaryTask={task}
+                  i={i}
+                  expanded={expandedId === task.id}
+                  detailsLoaded={!!details[task.id]}
+                  detailLoading={detailLoadingId === task.id}
+                  onToggle={() => handleToggle(task)}
+                  onRetry={handleRetry}
+                  retrying={false}
+                />
               ))}
             </tbody>
           </table>
@@ -267,7 +333,30 @@ export default function TasksPage() {
   )
 }
 
-function TaskRow({ task, i, expanded, onToggle, onRetry, retrying }: { task: Task; i: number; expanded: boolean; onToggle: () => void; onRetry: (t: Task) => void; retrying: boolean }) {
+function TaskRow({
+  task,
+  summaryTask,
+  i,
+  expanded,
+  detailsLoaded,
+  detailLoading,
+  onToggle,
+  onRetry,
+  retrying,
+}: {
+  task: Task
+  summaryTask: Task
+  i: number
+  expanded: boolean
+  detailsLoaded: boolean
+  detailLoading: boolean
+  onToggle: () => void
+  onRetry: (t: Task) => void
+  retrying: boolean
+}) {
+  const attempts = task.attempts ?? []
+  const assets = task.assets ?? []
+
   return (
     <>
       <tr className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50 cursor-pointer`} onClick={onToggle}>
@@ -276,7 +365,9 @@ function TaskRow({ task, i, expanded, onToggle, onRetry, retrying }: { task: Tas
         <td className="px-4 py-2.5 text-gray-700 max-w-[200px] truncate">{task.prompt}</td>
         <td className="px-4 py-2.5"><StatusBadge status={task.status} /></td>
         <td className="px-4 py-2.5 text-gray-600">{task.selectedProviderName || '-'}</td>
-        <td className="px-4 py-2.5 text-gray-600">{task.apiKey?.name || `${task.apiKey?.keyPrefix ?? ''}...` || '-'}</td>
+        <td className="px-4 py-2.5 text-gray-600">
+          {task.apiKey?.name ?? (task.apiKey?.keyPrefix ? `${task.apiKey.keyPrefix}...` : '-')}
+        </td>
         <td className="px-4 py-2.5 text-gray-600">{formatDuration(task.durationMs)}</td>
         <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap text-xs">{formatDate(task.createdAt)}</td>
       </tr>
@@ -289,26 +380,23 @@ function TaskRow({ task, i, expanded, onToggle, onRetry, retrying }: { task: Tas
                 <p className="text-sm text-gray-800 bg-white rounded border border-gray-200 p-3 whitespace-pre-wrap">{task.prompt}</p>
               </div>
 
-              <div>
-                <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Timing Breakdown</h4>
-                <div className="space-y-2">
-                  <TimingGrid timing={task.responseSnapshotJson?.timing} />
-                  {(task.responseSnapshotJson?.returnedImageUrlKind || task.responseSnapshotJson?.uploadedUrl) && (
-                    <div className="rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
-                      <div className="flex flex-wrap gap-x-4 gap-y-1">
-                        <span>Result Kind: {task.responseSnapshotJson?.returnedImageUrlKind || '-'}</span>
-                        <span>Uploaded Size: {formatBytes(task.responseSnapshotJson?.uploadedBytes)}</span>
-                      </div>
-                    </div>
-                  )}
+              {!detailsLoaded && detailLoading && (
+                <div className="rounded border border-gray-200 bg-white px-3 py-4 text-sm text-gray-500">
+                  Loading task details...
                 </div>
-              </div>
+              )}
 
-              {task.attempts && task.attempts.length > 0 && (
+              {!detailsLoaded && !detailLoading && (
+                <div className="rounded border border-gray-200 bg-white px-3 py-3 text-sm text-gray-500">
+                  Details are loaded on demand. Attempts: {summaryTask._count?.attempts ?? 0}, images: {summaryTask._count?.assets ?? 0}
+                </div>
+              )}
+
+              {attempts.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Attempts ({task.attempts.length})</h4>
+                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Attempts ({attempts.length})</h4>
                   <div className="space-y-2">
-                    {task.attempts.map((attempt) => (
+                    {attempts.map((attempt) => (
                       <div key={attempt.id} className="bg-white rounded border border-gray-200 p-3 text-sm">
                         <div className="flex items-center gap-3 text-gray-600">
                           <span className="font-medium">#{attempt.attemptIndex}</span>
@@ -335,11 +423,11 @@ function TaskRow({ task, i, expanded, onToggle, onRetry, retrying }: { task: Tas
                 </div>
               )}
 
-              {task.assets && task.assets.length > 0 && (
+              {assets.length > 0 && (
                 <div>
                   <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Generated Images</h4>
                   <div className="flex flex-wrap gap-3">
-                    {task.assets.map((asset) => (
+                    {assets.map((asset) => (
                       <a key={asset.id} href={asset.cosUrl} target="_blank" rel="noopener noreferrer">
                         <img src={asset.cosUrl} alt={`Generated image ${asset.id.slice(0, 8)}`} className="w-32 h-32 object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity" />
                       </a>

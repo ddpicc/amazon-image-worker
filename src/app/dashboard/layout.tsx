@@ -10,7 +10,9 @@ type NavItem = { href: string; label: string }
 const USER_NAV: NavItem[] = [
   { href: '/dashboard', label: 'Overview' },
   { href: '/dashboard/tasks', label: 'My Tasks' },
+  { href: '/dashboard/usage', label: 'Usage' },
   { href: '/dashboard/settings', label: 'API Keys' },
+  { href: '/dashboard/docs', label: 'API Docs' },
   { href: '/dashboard/account', label: 'Account' },
 ]
 
@@ -21,6 +23,9 @@ const ADMIN_NAV: NavItem[] = [
   { href: '/dashboard/test-image', label: 'Test Image' },
   { href: '/dashboard/tasks', label: 'Tasks' },
   { href: '/dashboard/stats', label: 'Statistics' },
+  { href: '/dashboard/pricing', label: 'Pricing' },
+  { href: '/dashboard/billing', label: 'Billing' },
+  { href: '/dashboard/docs', label: 'API Docs' },
   { href: '/dashboard/settings', label: 'Management' },
   { href: '/dashboard/account', label: 'Account' },
 ]

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, vendor, baseUrl, model, priority, apiKeyPlaintext, estimatedCostPerReq } = body as {
+    const { name, vendor, baseUrl, model, priority, apiKeyPlaintext, estimatedCostPerReq, maxConcurrent } = body as {
       name?: string
       vendor?: string
       baseUrl?: string
@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       priority?: number
       apiKeyPlaintext?: string
       estimatedCostPerReq?: number
+      maxConcurrent?: number
     }
 
     if (!name || !vendor || !baseUrl || !model || !apiKeyPlaintext) {
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
       priority,
       apiKeyPlaintext,
       estimatedCostPerReq,
+      maxConcurrent,
     })
 
     return NextResponse.json({ data: provider }, { status: 201 })

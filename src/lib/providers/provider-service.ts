@@ -3,6 +3,27 @@ import { prisma } from '../db/prisma'
 import { encryptSecret } from '../crypto'
 import { scoreProviders, ScoredProvider, ProviderRollingStats, DEFAULT_WEIGHTS, ScoringWeights } from './provider-scoring'
 
+// --- Per-Provider Concurrency Tracking ---
+
+export const providerInFlight = new Map<string, number>()
+
+export function acquireProviderSlot(providerId: string, max: number): boolean {
+  if (max <= 0) return true // unlimited
+  const current = providerInFlight.get(providerId) ?? 0
+  if (current >= max) return false
+  providerInFlight.set(providerId, current + 1)
+  return true
+}
+
+export function releaseProviderSlot(providerId: string): void {
+  const current = providerInFlight.get(providerId) ?? 1
+  if (current <= 1) {
+    providerInFlight.delete(providerId)
+  } else {
+    providerInFlight.set(providerId, current - 1)
+  }
+}
+
 function normalizeProviderBaseUrl(baseUrl: string): string {
   const normalized = baseUrl.trim().replace(/\/+$/, '')
   let url: URL
@@ -47,7 +68,26 @@ export async function selectProviders(weights?: ScoringWeights): Promise<ScoredP
   // Score cooling down providers (lower priority, appended at end)
   const scoredCooling = scoreProviders(coolingDown, rollingStats, weights)
 
-  return [...scoredReady, ...scoredCooling]
+  // Split by concurrency capacity: not-full first, full last
+  function splitByCapacity(scored: ScoredProvider[]): { notFull: ScoredProvider[]; full: ScoredProvider[] } {
+    const notFull: ScoredProvider[] = []
+    const full: ScoredProvider[] = []
+    for (const sp of scored) {
+      const max = sp.provider.maxConcurrent
+      const inflight = providerInFlight.get(sp.provider.id) ?? 0
+      if (max <= 0 || inflight < max) {
+        notFull.push(sp)
+      } else {
+        full.push(sp)
+      }
+    }
+    return { notFull, full }
+  }
+
+  const readySplit = splitByCapacity(scoredReady)
+  const coolingSplit = splitByCapacity(scoredCooling)
+
+  return [...readySplit.notFull, ...readySplit.full, ...coolingSplit.notFull, ...coolingSplit.full]
 }
 
 async function getRollingStats(providerIds: string[]): Promise<Map<string, ProviderRollingStats>> {
@@ -117,6 +157,7 @@ export async function createProvider(data: {
   priority?: number
   apiKeyPlaintext: string
   estimatedCostPerReq?: number
+  maxConcurrent?: number
 }) {
   const apiKeyCiphertext = await encryptSecret(data.apiKeyPlaintext)
   return prisma.imageProvider.create({
@@ -128,6 +169,7 @@ export async function createProvider(data: {
       priority: data.priority ?? 100,
       apiKeyCiphertext,
       estimatedCostPerReq: data.estimatedCostPerReq ?? 0,
+      maxConcurrent: data.maxConcurrent ?? 3,
     },
   })
 }
@@ -140,6 +182,7 @@ export async function updateProvider(id: string, data: {
   priority?: number
   enabled?: boolean
   estimatedCostPerReq?: number
+  maxConcurrent?: number
 }) {
   const updateData = {
     ...data,

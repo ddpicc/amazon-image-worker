@@ -4,6 +4,7 @@ import { generateOpaqueToken, hashOpaqueToken } from '@/lib/crypto'
 
 export const SESSION_COOKIE_NAME = 'session_token'
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7 // 7 days
+const SESSION_LAST_SEEN_UPDATE_INTERVAL_MS = 5 * 60 * 1000
 
 export function getSessionExpiryDate() {
   return new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000)
@@ -48,10 +49,12 @@ export async function getSessionWithUserByToken(token: string) {
     return null
   }
 
-  await prisma.session.update({
-    where: { id: session.id },
-    data: { lastSeenAt: new Date() },
-  }).catch(() => undefined)
+  if (Date.now() - session.lastSeenAt.getTime() >= SESSION_LAST_SEEN_UPDATE_INTERVAL_MS) {
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { lastSeenAt: new Date() },
+    }).catch(() => undefined)
+  }
 
   return session
 }

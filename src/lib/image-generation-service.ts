@@ -5,12 +5,13 @@ import { StoredReferenceImage } from './amazon-workflow'
 import { AspectRatio, RenderSize } from './image-options'
 import { completeAiOperation, completeAiOperationAttempt, getAiOperationExpiryDate, startAiOperation, startAiOperationAttempt } from './ai-operations'
 import { RouteSummary, PersistedImageGenerationPayload } from './image-generation'
-import { selectProviders, markProviderSuccess, markProviderFailure } from './providers/provider-service'
+import { selectProviders, markProviderSuccess, markProviderFailure, acquireProviderSlot, releaseProviderSlot } from './providers/provider-service'
 import { classifyError } from './providers/error-classifier'
 import { applyCooldown, clearCooldown } from './providers/cooldown'
 import { checkCircuitBreaker } from './providers/circuit-breaker'
 import { prisma } from './db/prisma'
 import { getObjectStorageBackend, uploadBufferToObjectStorage } from './object-storage'
+import { dispatchImageTaskCallback } from './image-task-callback'
 
 export interface GenerateImageInput {
   apiKeyId: string
@@ -391,6 +392,26 @@ async function emitPersistedStatus(requestId: string, message: string) {
   })
 }
 
+async function dispatchStoredTaskCallback(requestId: string) {
+  const request = await prisma.imageGenerationRequest.findUnique({
+    where: { id: requestId },
+    include: {
+      assets: {
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+  })
+
+  if (!request?.callbackUrl) {
+    return
+  }
+
+  await dispatchImageTaskCallback({
+    callbackUrl: request.callbackUrl,
+    task: request,
+  }).catch(() => undefined)
+}
+
 export async function createImageGenerationRequest(input: GenerateImageInput): Promise<GenerateImageOutput> {
   const { apiKeyId, prompt, referenceImages, size = '1024x1024', aspectRatio, imageType, entryApi, metadata, onStatus } = input
   const mode = referenceImages.length > 0 ? 'edit' : 'generate'
@@ -517,7 +538,7 @@ async function runImageGenerationForExistingRequest(params: {
     throw new Error(errorMessage)
   }
 
-  const imageFiles = referenceImages.slice(0, 3).map(toImageFile)
+  const imageFiles = referenceImages.slice(0, 16).map(toImageFile)
   const errors: string[] = []
   const attemptedLines: RouteSummary['attemptedLines'] = []
 
@@ -580,6 +601,17 @@ async function runImageGenerationForExistingRequest(params: {
         requestSnapshotJson: attemptRequestSnapshot as Prisma.InputJsonValue,
       },
     })
+
+    // Acquire provider concurrency slot; skip if at capacity
+    if (!acquireProviderSlot(provider.id, provider.maxConcurrent)) {
+      console.info('[image.generate] provider at capacity, skipping', {
+        requestId,
+        providerName: provider.name,
+        providerId: provider.id,
+        inflight: provider.maxConcurrent,
+      })
+      continue
+    }
 
     try {
       const attemptResult = await withTimeout(async () => {
@@ -754,6 +786,7 @@ async function runImageGenerationForExistingRequest(params: {
       // Smart routing: mark success and clear cooldown
       await markProviderSuccess(provider.id, attemptDuration)
       await clearCooldown(provider.id)
+      releaseProviderSlot(provider.id)
 
       attemptedLines.push({
         lineIndex: index + 1,
@@ -772,6 +805,7 @@ async function runImageGenerationForExistingRequest(params: {
       }
 
       await emitStatus(`${lineName(index + 1)}生成成功`)
+      await dispatchStoredTaskCallback(requestId)
 
       return {
         requestId: requestId,
@@ -829,6 +863,7 @@ async function runImageGenerationForExistingRequest(params: {
       // Smart routing: mark failure, apply graduated cooldown, check circuit breaker
       await markProviderFailure(provider.id, attemptDuration)
       await applyCooldown(provider.id, errorType, provider.consecutiveFailures)
+      releaseProviderSlot(provider.id)
       const breakerTripped = await checkCircuitBreaker(provider.id)
       if (breakerTripped) {
         console.warn(`[image.generate] Circuit breaker tripped for provider ${provider.name}`)
@@ -891,6 +926,7 @@ export async function buildPersistedImageGenerationPayload(params: {
   size: RenderSize
   referenceImages: StoredReferenceImage[]
   metadata?: Record<string, unknown> | null
+  callbackUrl?: string | null
 }): Promise<PersistedImageGenerationPayload> {
   return {
     prompt: params.prompt,
@@ -900,6 +936,7 @@ export async function buildPersistedImageGenerationPayload(params: {
     size: params.size,
     referenceImages: params.referenceImages,
     metadata: params.metadata ?? null,
+    callbackUrl: params.callbackUrl ?? null,
   }
 }
 
@@ -913,6 +950,7 @@ export async function createQueuedImageGenerationRequest(params: {
   size: RenderSize
   referenceImages: StoredReferenceImage[]
   metadata?: Record<string, unknown>
+  callbackUrl?: string | null
 }) {
   const operation = await startAiOperation({
     apiKeyId: params.apiKeyId,
@@ -950,6 +988,7 @@ export async function createQueuedImageGenerationRequest(params: {
     size: params.size,
     referenceImages: params.referenceImages,
     metadata: params.metadata,
+    callbackUrl: params.callbackUrl ?? null,
   })
 
   const requestRecord = await prisma.imageGenerationRequest.create({
@@ -961,6 +1000,7 @@ export async function createQueuedImageGenerationRequest(params: {
       imageType: params.imageType ?? null,
       aspectRatio: params.aspectRatio ?? null,
       size: params.size,
+      callbackUrl: params.callbackUrl ?? null,
       metadata: params.metadata ? (params.metadata as Prisma.InputJsonValue) : undefined,
       referenceImageCount: params.referenceImages.length,
       referenceImagesJson: params.referenceImages as unknown as Prisma.InputJsonValue,
@@ -1013,7 +1053,7 @@ export async function executeQueuedImageGeneration(requestId: string) {
     },
   })
 
-  const referenceImages = await Promise.all((payload.referenceImages || []).slice(0, 3).map(async (image) => {
+  const referenceImages = await Promise.all((payload.referenceImages || []).slice(0, 16).map(async (image) => {
     const response = await fetch(image.url)
     if (!response.ok) {
       throw new Error(`Failed to load saved reference image: ${response.status}`)
@@ -1064,6 +1104,8 @@ export async function executeQueuedImageGeneration(requestId: string) {
         errorMessage: message,
       }).catch(() => undefined)
     }
+
+    await dispatchStoredTaskCallback(request.id)
 
     throw error
   }

@@ -144,7 +144,7 @@ export default function AdminTestImagePage() {
 
       const testRawKey = keyJson.data.key as string
 
-      const submitRes = await fetch('/api/v1/tasks', {
+      const submitRes = await fetch('/v1/images/generations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -164,13 +164,13 @@ export default function AdminTestImagePage() {
         throw new Error(submitJson?.error || 'Failed to submit task')
       }
 
-      const nextRequestId = submitJson.requestId as string
+      const nextRequestId = submitJson.id as string
       setRequestId(nextRequestId)
       setTask({
         id: nextRequestId,
         prompt: prompt.trim(),
-        status: submitJson.status as TaskStatus,
-        statusMessage: submitJson.statusMessage ?? 'Task submitted',
+        status: 'QUEUED',
+        statusMessage: 'Task submitted',
         errorMessage: null,
         selectedProviderName: null,
         durationMs: null,
@@ -195,7 +195,7 @@ export default function AdminTestImagePage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Test Image</h2>
-          <p className="mt-1 text-sm text-gray-500">管理员测试页。实际调用 `POST /api/v1/tasks` 提交任务，再用管理员会话查看结果。</p>
+          <p className="mt-1 text-sm text-gray-500">管理员测试页。实际调用 `POST /v1/images/generations` 提交任务，再用管理员会话查看结果。</p>
         </div>
         <Link href="/dashboard/tasks" className="text-sm text-blue-600 hover:text-blue-700">
           View All Tasks

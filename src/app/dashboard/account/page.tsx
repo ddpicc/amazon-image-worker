@@ -101,6 +101,12 @@ export default function AccountPage() {
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
 
       <div className="rounded-lg shadow-sm border border-gray-200 bg-white p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Balance</h3>
+        <p className="text-sm text-gray-500 mb-4">Your available prepaid balance for billed image generation</p>
+        <div className="text-3xl font-bold text-gray-900">${(user.balance ?? 0).toFixed(4)}</div>
+      </div>
+
+      <div className="rounded-lg shadow-sm border border-gray-200 bg-white p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Profile</h3>
         <form onSubmit={saveProfile} className="space-y-4">
           <div>

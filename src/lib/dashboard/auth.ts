@@ -6,6 +6,7 @@ export interface DashboardUser {
   name: string | null
   role: 'ADMIN' | 'USER'
   enabled: boolean
+  balance?: number
 }
 
 export async function fetchCurrentUser(): Promise<DashboardUser | null> {

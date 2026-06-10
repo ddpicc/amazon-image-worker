@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { parse } from 'cookie'
-import { SESSION_COOKIE_NAME } from '@/lib/auth/session'
 
 async function hashApiKeyEdge(rawKey: string): Promise<string> {
   const encoder = new TextEncoder()
@@ -11,30 +9,12 @@ async function hashApiKeyEdge(rawKey: string): Promise<string> {
     .join('')
 }
 
-function getSessionTokenFromRequest(request: NextRequest): string | null {
-  const cookieHeader = request.headers.get('cookie')
-  if (!cookieHeader) return null
-  const cookies = parse(cookieHeader)
-  return cookies[SESSION_COOKIE_NAME] ?? null
-}
-
 async function verifyApiKey(request: NextRequest, rawKey: string) {
   const keyHash = await hashApiKeyEdge(rawKey)
   const verifyRes = await fetch(new URL('/api/internal/verify-key', request.url), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keyHash }),
-  })
-
-  if (!verifyRes.ok) return null
-  return verifyRes.json()
-}
-
-async function verifySession(request: NextRequest, token: string) {
-  const verifyRes = await fetch(new URL('/api/internal/verify-session', request.url), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
   })
 
   if (!verifyRes.ok) return null
@@ -54,7 +34,6 @@ function withAuthHeaders(request: NextRequest, headersToSet: Record<string, stri
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const sessionToken = getSessionTokenFromRequest(request)
   const authHeader = request.headers.get('authorization')
 
   // ------------------------------------------------------------
@@ -66,18 +45,6 @@ export async function proxy(request: NextRequest) {
     pathname === '/api/v1/auth/logout' ||
     pathname === '/api/v1/auth/me'
   ) {
-    if (pathname === '/api/v1/auth/me' && sessionToken) {
-      const verified = await verifySession(request, sessionToken).catch(() => null)
-      if (verified?.user) {
-        return withAuthHeaders(request, {
-          'x-auth-type': 'session',
-          'x-user-id': verified.user.id,
-          'x-user-role': verified.user.role,
-          'x-session-id': verified.session.id,
-        })
-      }
-    }
-
     return NextResponse.next()
   }
 
@@ -91,7 +58,11 @@ export async function proxy(request: NextRequest) {
   // ------------------------------------------------------------
   // Machine/API-key authenticated task creation and scoped task access
   // ------------------------------------------------------------
-  if (pathname.startsWith('/api/v1/tasks')) {
+  if (
+    pathname.startsWith('/api/v1/tasks') ||
+    pathname.startsWith('/api/v1/images/') ||
+    pathname.startsWith('/v1/images/')
+  ) {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const rawKey = authHeader.slice('Bearer '.length)
       const apiKey = await verifyApiKey(request, rawKey).catch(() => null)
@@ -103,20 +74,6 @@ export async function proxy(request: NextRequest) {
           'x-api-key-name': apiKey.name,
           'x-user-id': apiKey.ownerUserId,
           'x-user-role': apiKey.ownerUserRole ?? 'USER',
-        })
-      }
-
-      return NextResponse.next()
-    }
-
-    if (sessionToken) {
-      const verified = await verifySession(request, sessionToken).catch(() => null)
-      if (verified?.user) {
-        return withAuthHeaders(request, {
-          'x-auth-type': 'session',
-          'x-user-id': verified.user.id,
-          'x-user-role': verified.user.role,
-          'x-session-id': verified.session.id,
         })
       }
 
@@ -141,18 +98,6 @@ export async function proxy(request: NextRequest) {
   )
 
   if (isAdminRoute) {
-    if (sessionToken) {
-      const verified = await verifySession(request, sessionToken).catch(() => null)
-      if (verified?.user && verified.user.role === 'ADMIN') {
-        return withAuthHeaders(request, {
-          'x-auth-type': 'session',
-          'x-user-id': verified.user.id,
-          'x-user-role': verified.user.role,
-          'x-session-id': verified.session.id,
-        })
-      }
-    }
-
     return NextResponse.next()
   }
 
@@ -162,6 +107,7 @@ export async function proxy(request: NextRequest) {
   const userRoutes = [
     '/api/v1/api-keys',
     '/api/v1/auth/me',
+    '/api/v1/usage',
   ]
 
   const isUserRoute = userRoutes.some(
@@ -169,18 +115,6 @@ export async function proxy(request: NextRequest) {
   )
 
   if (isUserRoute) {
-    if (sessionToken) {
-      const verified = await verifySession(request, sessionToken).catch(() => null)
-      if (verified?.user) {
-        return withAuthHeaders(request, {
-          'x-auth-type': 'session',
-          'x-user-id': verified.user.id,
-          'x-user-role': verified.user.role,
-          'x-session-id': verified.session.id,
-        })
-      }
-    }
-
     return NextResponse.next()
   }
 
@@ -188,5 +122,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/v1/:path*', '/api/internal/:path*'],
+  matcher: ['/api/v1/:path*', '/api/internal/:path*', '/v1/:path*'],
 }

@@ -26,6 +26,7 @@ export interface PersistedImageGenerationPayload {
   size: RenderSize
   referenceImages: StoredReferenceImage[]
   metadata?: Record<string, unknown> | null
+  callbackUrl?: string | null
 }
 
 export interface ImageGenerationSubmitResult {

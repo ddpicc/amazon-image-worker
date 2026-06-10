@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
-import { checkAndIncrementQuota } from '@/lib/auth/quota-service'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
-import { createQueuedImageGenerationRequest } from '@/lib/image-generation-service'
-import { enqueueImageGeneration } from '@/lib/image-generation-worker-queue'
-import type { AspectRatio, RenderSize } from '@/lib/image-options'
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,7 +40,15 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
-        include: {
+        select: {
+          id: true,
+          prompt: true,
+          status: true,
+          selectedProviderName: true,
+          durationMs: true,
+          createdAt: true,
+          errorMessage: true,
+          responseSnapshotJson: true,
           apiKey: {
             select: {
               id: true,
@@ -52,11 +56,11 @@ export async function GET(request: NextRequest) {
               keyPrefix: true,
             },
           },
-          attempts: {
-            orderBy: { attemptIndex: 'asc' },
-          },
-          assets: {
-            orderBy: { createdAt: 'asc' },
+          _count: {
+            select: {
+              attempts: true,
+              assets: true,
+            },
           },
         },
       }),
@@ -69,74 +73,6 @@ export async function GET(request: NextRequest) {
       page,
       limit,
       totalPages: Math.max(1, Math.ceil(total / limit)),
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const result = await requireRequestAuth(request)
-    if ('error' in result) {
-      return result.error
-    }
-    const { auth } = result
-
-    if (auth.authType !== 'api-key' || !auth.apiKeyId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const body = await request.json()
-    const { prompt, referenceImages, size, aspectRatio, imageType, metadata } = body as {
-      prompt?: string
-      referenceImages?: Array<{ data: string; mediaType: string }>
-      size?: string
-      aspectRatio?: string
-      imageType?: string
-      metadata?: Record<string, unknown>
-    }
-
-    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-      return NextResponse.json({ error: 'prompt is required' }, { status: 400 })
-    }
-
-    const quotaResult = await checkAndIncrementQuota(auth.apiKeyId)
-    if (!quotaResult.allowed) {
-      return NextResponse.json(
-        { error: quotaResult.reason || 'Quota exceeded' },
-        { status: 429 },
-      )
-    }
-
-    const refImages = Array.isArray(referenceImages) ? referenceImages : []
-    const resolvedSize = size || '1024x1024'
-
-    const submitResult = await createQueuedImageGenerationRequest({
-      apiKeyId: auth.apiKeyId,
-      prompt: prompt.trim(),
-      originalPrompt: prompt.trim(),
-      entryApi: 'api-tasks',
-      imageType: imageType || null,
-      aspectRatio: (aspectRatio as AspectRatio) || null,
-      size: resolvedSize as RenderSize,
-      referenceImages: refImages.map((img, index) => ({
-        url: `data:${img.mediaType};base64,${img.data}`,
-        key: `inline-ref-${index}`,
-        mimeType: img.mediaType || 'image/jpeg',
-        bytes: Buffer.from(img.data, 'base64').byteLength,
-        name: `reference-${index}`,
-      })),
-      metadata,
-    })
-
-    await enqueueImageGeneration({ requestId: submitResult.requestId })
-
-    return NextResponse.json({
-      requestId: submitResult.requestId,
-      status: submitResult.status,
-      statusMessage: submitResult.statusMessage,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'

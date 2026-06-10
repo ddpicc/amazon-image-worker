@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
         name: user.name,
         role: user.role,
         enabled: user.enabled,
+        balance: Number(user.balance),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         apiKeyCount: user._count.apiKeys,

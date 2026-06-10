@@ -47,7 +47,7 @@ export async function PUT(
     const { id } = await params
 
     const body = await request.json()
-    const { name, vendor, baseUrl, model, priority, enabled, estimatedCostPerReq } = body as {
+    const { name, vendor, baseUrl, model, priority, enabled, estimatedCostPerReq, maxConcurrent } = body as {
       name?: string
       vendor?: string
       baseUrl?: string
@@ -55,6 +55,7 @@ export async function PUT(
       priority?: number
       enabled?: boolean
       estimatedCostPerReq?: number
+      maxConcurrent?: number
     }
 
     const provider = await updateProvider(id, {
@@ -65,6 +66,7 @@ export async function PUT(
       priority,
       enabled,
       estimatedCostPerReq,
+      maxConcurrent,
     })
 
     return NextResponse.json({ data: provider })
