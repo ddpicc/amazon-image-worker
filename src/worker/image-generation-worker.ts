@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { Worker } from 'bullmq'
-import { executeQueuedImageGeneration } from '../lib/image-generation-service'
-import { getImageGenerationQueueName, ImageGenerationQueueJobData } from '../lib/image-generation-worker-queue'
+import { executeQueuedImageGeneration, ProviderCapacityRequeueError } from '../lib/image-generation-service'
+import { enqueueImageGeneration, getImageGenerationQueueName, ImageGenerationQueueJobData } from '../lib/image-generation-worker-queue'
 import { prisma } from '../lib/db/prisma'
 import { snapshotProviderStats } from '../lib/providers/stats-snapshot'
 import { resetDailyQuotas, resetMonthlyQuotas } from '../lib/auth/quota-reset'
@@ -9,6 +9,7 @@ import { refundBalance } from '../lib/billing/billing-service'
 import { dispatchImageTaskCallback } from '../lib/image-task-callback'
 
 const QUEUE_NAME = getImageGenerationQueueName()
+const PROVIDER_CAPACITY_REQUEUE_DELAY_MS = 10_000
 
 // Scheduled intervals
 const STATS_SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000   // 15 minutes
@@ -108,6 +109,37 @@ async function main() {
         })
         return result
       } catch (error) {
+        if (error instanceof ProviderCapacityRequeueError) {
+          const nextJob = await enqueueImageGeneration({
+            requestId,
+            enqueueVersion: job.data.enqueueVersion + 1,
+            options: {
+              delay: PROVIDER_CAPACITY_REQUEUE_DELAY_MS,
+            },
+          })
+
+          await prisma.imageGenerationRequest.update({
+            where: { id: requestId },
+            data: {
+              workerJobId: nextJob.id?.toString() ?? null,
+            },
+          }).catch(() => undefined)
+
+          console.info('[worker] requeued job due to provider capacity', {
+            jobId: job.id,
+            requestId,
+            nextJobId: nextJob.id,
+            enqueueVersion: job.data.enqueueVersion + 1,
+            delayMs: PROVIDER_CAPACITY_REQUEUE_DELAY_MS,
+          })
+
+          return {
+            requestId,
+            status: 'requeued',
+            delayMs: PROVIDER_CAPACITY_REQUEUE_DELAY_MS,
+          }
+        }
+
         console.error('[worker] job failed', {
           jobId: job.id,
           requestId,

@@ -50,7 +50,16 @@ export class GenerateImageRouteError extends Error {
   }
 }
 
+export class ProviderCapacityRequeueError extends Error {
+  constructor(message = 'All providers are currently at capacity') {
+    super(message)
+    this.name = 'ProviderCapacityRequeueError'
+  }
+}
+
 const PROVIDER_TIMEOUT_MS = 240_000
+const CAPACITY_REQUEUE_LIMIT = 30
+const CAPACITY_REQUEUE_MAX_WAIT_MS = 7 * 60 * 1000
 
 function getExtensionFromMediaType(mediaType: string): string {
   if (mediaType === 'image/png') return 'png'
@@ -541,6 +550,7 @@ async function runImageGenerationForExistingRequest(params: {
   const imageFiles = referenceImages.slice(0, 16).map(toImageFile)
   const errors: string[] = []
   const attemptedLines: RouteSummary['attemptedLines'] = []
+  let capacityBlocked = false
 
   console.info('[image.generate] request start', {
     requestId: requestId,
@@ -576,6 +586,18 @@ async function runImageGenerationForExistingRequest(params: {
       providerModel: provider.model,
     }
 
+    // Acquire provider concurrency slot; skip if at capacity
+    if (!acquireProviderSlot(provider.id, provider.maxConcurrent)) {
+      capacityBlocked = true
+      console.info('[image.generate] provider at capacity, skipping', {
+        requestId,
+        providerName: provider.name,
+        providerId: provider.id,
+        inflight: provider.maxConcurrent,
+      })
+      continue
+    }
+
     const operationAttempt = await startAiOperationAttempt({
       operationId: operationId,
       providerType: 'IMAGE',
@@ -601,17 +623,6 @@ async function runImageGenerationForExistingRequest(params: {
         requestSnapshotJson: attemptRequestSnapshot as Prisma.InputJsonValue,
       },
     })
-
-    // Acquire provider concurrency slot; skip if at capacity
-    if (!acquireProviderSlot(provider.id, provider.maxConcurrent)) {
-      console.info('[image.generate] provider at capacity, skipping', {
-        requestId,
-        providerName: provider.name,
-        providerId: provider.id,
-        inflight: provider.maxConcurrent,
-      })
-      continue
-    }
 
     try {
       const attemptResult = await withTimeout(async () => {
@@ -878,6 +889,10 @@ async function runImageGenerationForExistingRequest(params: {
     }
   }
 
+  if (capacityBlocked) {
+    throw new ProviderCapacityRequeueError()
+  }
+
   const errorMessage = errors.join(' | ') || 'All image providers failed'
   await prisma.imageGenerationRequest.update({
     where: { id: requestId },
@@ -1085,6 +1100,57 @@ export async function executeQueuedImageGeneration(requestId: string) {
       },
     })
   } catch (error) {
+    if (error instanceof ProviderCapacityRequeueError) {
+      const now = Date.now()
+      const currentRequeueCount = (request as { capacityRequeueCount?: number | null }).capacityRequeueCount ?? 0
+      const nextRequeueCount = currentRequeueCount + 1
+      const waitStartedAt = request.queuedAt ?? request.createdAt
+      const totalWaitMs = now - waitStartedAt.getTime()
+
+      if (nextRequeueCount > CAPACITY_REQUEUE_LIMIT || totalWaitMs > CAPACITY_REQUEUE_MAX_WAIT_MS) {
+        const timeoutReason = nextRequeueCount > CAPACITY_REQUEUE_LIMIT
+          ? `Provider remained at capacity after ${currentRequeueCount} requeues`
+          : `Provider remained at capacity for ${Math.ceil(totalWaitMs / 1000)} seconds`
+
+        await prisma.imageGenerationRequest.update({
+          where: { id: request.id },
+          data: {
+            status: 'FAILED',
+            errorMessage: timeoutReason,
+            statusMessage: timeoutReason,
+            completedAt: new Date(),
+          },
+        }).catch(() => undefined)
+
+        if (request.operationId) {
+          await completeAiOperation({
+            operationId: request.operationId,
+            status: 'FAILED',
+            finalPrompt: payload.prompt,
+            errorMessage: timeoutReason,
+          }).catch(() => undefined)
+        }
+
+        await dispatchStoredTaskCallback(request.id)
+        throw new Error(timeoutReason)
+      }
+
+      await prisma.imageGenerationRequest.update({
+        where: { id: request.id },
+        data: {
+          status: 'QUEUED',
+          statusMessage: `Provider 满载，10 秒后自动重试（${nextRequeueCount}/${CAPACITY_REQUEUE_LIMIT}）`,
+          capacityRequeueCount: {
+            increment: 1,
+          },
+          errorMessage: null,
+          completedAt: null,
+        } as any,
+      }).catch(() => undefined)
+
+      throw error
+    }
+
     const message = error instanceof Error ? error.message : 'Failed to generate image'
     await prisma.imageGenerationRequest.update({
       where: { id: request.id },

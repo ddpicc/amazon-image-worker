@@ -43,6 +43,10 @@ export function getImageGenerationQueueName() {
   return IMAGE_GENERATION_QUEUE_NAME
 }
 
+export function buildImageGenerationJobId(requestId: string, enqueueVersion: number) {
+  return `${requestId}:${enqueueVersion}`
+}
+
 export async function enqueueImageGeneration(params: {
   requestId: string
   enqueueVersion?: number
@@ -56,7 +60,7 @@ export async function enqueueImageGeneration(params: {
       enqueueVersion: params.enqueueVersion ?? 1,
     },
     {
-      jobId: params.requestId,
+      jobId: buildImageGenerationJobId(params.requestId, params.enqueueVersion ?? 1),
       attempts: 1,
       ...params.options,
     },

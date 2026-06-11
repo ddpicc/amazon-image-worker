@@ -231,6 +231,7 @@ model ImageGenerationRequest {
   metadata                Json?
   cost                    Decimal?
   costStatus              CostStatus?
+  capacityRequeueCount    Int                      @default(0)
   workerJobId             String?
   queuedAt                DateTime?
   startedAt               DateTime?
