@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchCurrentUser } from '@/lib/dashboard/auth'
-import { Plus, Pencil, ArrowUp, ArrowDown, Power, PowerOff, X, Eye, Copy, Check, Trash2 } from 'lucide-react'
+import { Plus, Pencil, ArrowUp, ArrowDown, Power, PowerOff, X, Eye, Copy, Check, Trash2, RotateCcw } from 'lucide-react'
 
 interface Provider {
   id: string
@@ -172,6 +172,23 @@ export default function ProvidersPage() {
     }
   }
 
+  async function resetBreaker(p: Provider) {
+    setActionLoading(p.id)
+    try {
+      const res = await fetch(`/api/v1/providers/${p.id}/reset-breaker`, {
+        method: 'POST',
+      })
+      if (res.ok) {
+        await fetchProviders()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        alert(body.error || 'Failed to reset breaker')
+      }
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   function copySecret() {
     if (!providerSecret?.apiKey) return
     navigator.clipboard.writeText(providerSecret.apiKey).then(() => {
@@ -306,6 +323,9 @@ export default function ProvidersPage() {
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1">
                       <button onClick={() => toggleEnabled(p)} disabled={actionLoading === p.id} title={p.enabled ? 'Disable' : 'Enable'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50">{p.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}</button>
+                      {p.circuitBreakerTrippedAt && (
+                        <button onClick={() => resetBreaker(p)} disabled={actionLoading === p.id} title="Reset breaker" className="p-1 rounded hover:bg-emerald-50 text-gray-500 hover:text-emerald-700 disabled:opacity-50"><RotateCcw className="w-3.5 h-3.5" /></button>
+                      )}
                       <button onClick={() => movePriority(p, 'up')} disabled={actionLoading === p.id} title="Move up" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowUp className="w-3.5 h-3.5" /></button>
                       <button onClick={() => movePriority(p, 'down')} disabled={actionLoading === p.id} title="Move down" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowDown className="w-3.5 h-3.5" /></button>
                       <button onClick={() => openEdit(p)} title="Edit" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"><Pencil className="w-3.5 h-3.5" /></button>
