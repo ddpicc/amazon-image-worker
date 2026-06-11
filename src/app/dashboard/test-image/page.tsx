@@ -6,6 +6,16 @@ import { useRouter } from 'next/navigation'
 import { fetchCurrentUser } from '@/lib/dashboard/auth'
 
 type TaskStatus = 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
+type TestMode = 'queue' | 'direct'
+
+interface ProviderOption {
+  id: string
+  name: string
+  vendor: string
+  model: string
+  baseUrl: string
+  enabled: boolean
+}
 
 interface TaskAsset {
   id: string
@@ -38,6 +48,19 @@ interface TaskDetail {
   completedAt: string | null
 }
 
+interface DirectTestResult {
+  provider: ProviderOption
+  prompt: string
+  size: string
+  durationMs: number
+  revisedPrompt: string
+  returnedImageUrlKind: 'data-url' | 'remote-url' | 'b64-json'
+  upstreamImageUrl: string | null
+  mimeType: string
+  bytes: number
+  imageBase64: string
+}
+
 const DEFAULT_PROMPT = 'A premium ecommerce studio photo of a ceramic mug with soft shadow and clean white background'
 
 function formatDuration(ms: number | null): string {
@@ -46,14 +69,25 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null) return '-'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
 export default function AdminTestImagePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [size, setSize] = useState('1024x1024')
+  const [mode, setMode] = useState<TestMode>('queue')
+  const [providers, setProviders] = useState<ProviderOption[]>([])
+  const [selectedProviderId, setSelectedProviderId] = useState('')
   const [requestId, setRequestId] = useState('')
   const [task, setTask] = useState<TaskDetail | null>(null)
+  const [directResult, setDirectResult] = useState<DirectTestResult | null>(null)
   const [error, setError] = useState('')
 
   const isActiveTask = useMemo(
@@ -82,7 +116,44 @@ export default function AdminTestImagePage() {
   }, [router])
 
   useEffect(() => {
-    if (!requestId) {
+    if (loading) {
+      return
+    }
+
+    let cancelled = false
+
+    async function loadProviders() {
+      try {
+        const res = await fetch('/api/v1/providers', {
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(json?.error || `Failed to load providers (${res.status})`)
+        }
+
+        const nextProviders = (json?.data || []).filter((provider: ProviderOption) => provider.enabled)
+        if (!cancelled) {
+          setProviders(nextProviders)
+          setSelectedProviderId((current) => current || nextProviders[0]?.id || '')
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load providers')
+        }
+      }
+    }
+
+    loadProviders()
+
+    return () => {
+      cancelled = true
+    }
+  }, [loading])
+
+  useEffect(() => {
+    if (!requestId || mode !== 'queue') {
       return
     }
 
@@ -125,60 +196,89 @@ export default function AdminTestImagePage() {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [requestId, isActiveTask])
+  }, [requestId, isActiveTask, mode])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
     setError('')
+    setTask(null)
+    setDirectResult(null)
+    setRequestId('')
 
     try {
-      const keyRes = await fetch('/api/v1/admin/test-api-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      const keyJson = await keyRes.json().catch(() => null)
-      if (!keyRes.ok) {
-        throw new Error(keyJson?.error || 'Failed to create temporary API key')
+      if (mode === 'queue') {
+        const keyRes = await fetch('/api/v1/admin/test-api-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        const keyJson = await keyRes.json().catch(() => null)
+        if (!keyRes.ok) {
+          throw new Error(keyJson?.error || 'Failed to create temporary API key')
+        }
+
+        const testRawKey = keyJson.data.key as string
+
+        const submitRes = await fetch('/v1/images/generations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${testRawKey}`,
+          },
+          body: JSON.stringify({
+            prompt: prompt.trim(),
+            size,
+            metadata: {
+              source: 'admin-test-image-page',
+              submittedAt: new Date().toISOString(),
+            },
+          }),
+        })
+        const submitJson = await submitRes.json().catch(() => null)
+        if (!submitRes.ok) {
+          throw new Error(submitJson?.error || 'Failed to submit task')
+        }
+
+        const nextRequestId = submitJson.id as string
+        setRequestId(nextRequestId)
+        setTask({
+          id: nextRequestId,
+          prompt: prompt.trim(),
+          status: 'QUEUED',
+          statusMessage: 'Task submitted',
+          errorMessage: null,
+          selectedProviderName: null,
+          durationMs: null,
+          assets: [],
+          attempts: [],
+          createdAt: new Date().toISOString(),
+          completedAt: null,
+        })
+        return
       }
 
-      const testRawKey = keyJson.data.key as string
+      if (!selectedProviderId) {
+        throw new Error('Please select a provider')
+      }
 
-      const submitRes = await fetch('/v1/images/generations', {
+      const directRes = await fetch('/api/v1/admin/test-image/direct', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${testRawKey}`,
         },
+        credentials: 'include',
         body: JSON.stringify({
+          providerId: selectedProviderId,
           prompt: prompt.trim(),
           size,
-          metadata: {
-            source: 'admin-test-image-page',
-            submittedAt: new Date().toISOString(),
-          },
         }),
       })
-      const submitJson = await submitRes.json().catch(() => null)
-      if (!submitRes.ok) {
-        throw new Error(submitJson?.error || 'Failed to submit task')
+      const directJson = await directRes.json().catch(() => null)
+      if (!directRes.ok) {
+        throw new Error(directJson?.error || 'Failed to test provider directly')
       }
 
-      const nextRequestId = submitJson.id as string
-      setRequestId(nextRequestId)
-      setTask({
-        id: nextRequestId,
-        prompt: prompt.trim(),
-        status: 'QUEUED',
-        statusMessage: 'Task submitted',
-        errorMessage: null,
-        selectedProviderName: null,
-        durationMs: null,
-        assets: [],
-        attempts: [],
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-      })
+      setDirectResult(directJson.data as DirectTestResult)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit test task')
     } finally {
@@ -195,7 +295,7 @@ export default function AdminTestImagePage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Test Image</h2>
-          <p className="mt-1 text-sm text-gray-500">管理员测试页。实际调用 `POST /v1/images/generations` 提交任务，再用管理员会话查看结果。</p>
+          <p className="mt-1 text-sm text-gray-500">管理员测试页。既可以测试真实队列提交流程，也可以直接测试单个 provider。</p>
         </div>
         <Link href="/dashboard/tasks" className="text-sm text-blue-600 hover:text-blue-700">
           View All Tasks
@@ -204,6 +304,51 @@ export default function AdminTestImagePage() {
 
       <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Test Mode</label>
+            <div className="flex flex-wrap gap-3">
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="queue"
+                  checked={mode === 'queue'}
+                  onChange={() => setMode('queue')}
+                />
+                Queue test (/v1/images/generations)
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
+                  name="mode"
+                  value="direct"
+                  checked={mode === 'direct'}
+                  onChange={() => setMode('direct')}
+                />
+                Direct provider test
+              </label>
+            </div>
+          </div>
+
+          {mode === 'direct' && (
+            <div className="max-w-xl">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+              <select
+                value={selectedProviderId}
+                onChange={(e) => setSelectedProviderId(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">Select a provider</option>
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name} · {provider.vendor} · {provider.model}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">Direct mode bypasses internal enqueue/worker and calls the selected provider directly.</p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
             <textarea
@@ -231,12 +376,12 @@ export default function AdminTestImagePage() {
           <div className="flex items-center gap-3">
             <button
               type="submit"
-              disabled={submitting || !prompt.trim()}
+              disabled={submitting || !prompt.trim() || (mode === 'direct' && !selectedProviderId)}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {submitting ? 'Submitting...' : 'Submit Test Task'}
+              {submitting ? 'Submitting...' : mode === 'queue' ? 'Submit Queue Test' : 'Run Direct Provider Test'}
             </button>
-            {requestId && (
+            {mode === 'queue' && requestId && (
               <span className="text-xs text-gray-500">
                 Request ID: <span className="font-mono">{requestId}</span>
               </span>
@@ -251,11 +396,11 @@ export default function AdminTestImagePage() {
         </div>
       )}
 
-      {task && (
+      {task && mode === 'queue' && (
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Latest Test Task</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Latest Queue Test Task</h3>
               <p className="mt-1 text-sm text-gray-500 break-all">{task.prompt}</p>
             </div>
             <div className="text-right">
@@ -340,6 +485,69 @@ export default function AdminTestImagePage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {directResult && mode === 'direct' && (
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Direct Provider Test Result</h3>
+              <p className="mt-1 text-sm text-gray-500 break-all">{directResult.prompt}</p>
+            </div>
+            <div className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
+              SUCCESS
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Provider</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.provider.name}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Model</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.provider.model}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Duration</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{formatDuration(directResult.durationMs)}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Image Size</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{formatBytes(directResult.bytes)}</div>
+            </div>
+          </div>
+
+          <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 space-y-1">
+            <div><span className="font-medium">Vendor:</span> {directResult.provider.vendor}</div>
+            <div><span className="font-medium">Base URL:</span> {directResult.provider.baseUrl}</div>
+            <div><span className="font-medium">Returned kind:</span> {directResult.returnedImageUrlKind}</div>
+            <div><span className="font-medium">MIME type:</span> {directResult.mimeType}</div>
+            {directResult.upstreamImageUrl && (
+              <div className="break-all"><span className="font-medium">Upstream URL:</span> {directResult.upstreamImageUrl}</div>
+            )}
+          </div>
+
+          {directResult.revisedPrompt !== directResult.prompt && (
+            <div>
+              <h4 className="mb-2 text-sm font-medium text-gray-900">Revised Prompt</h4>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 whitespace-pre-wrap">
+                {directResult.revisedPrompt}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <h4 className="mb-2 text-sm font-medium text-gray-900">Generated Image</h4>
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 inline-block">
+              <img
+                src={`data:${directResult.mimeType};base64,${directResult.imageBase64}`}
+                alt="Direct provider test result"
+                className="max-h-[32rem] max-w-full object-contain"
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

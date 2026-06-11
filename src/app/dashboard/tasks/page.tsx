@@ -204,18 +204,20 @@ export default function TasksPage() {
   }, [user, fetchTasks])
 
   useEffect(() => {
-    if (!user || !hasActiveTasks) {
+    if (!user || expandedId) {
       return
     }
+
+    const intervalMs = hasActiveTasks ? 5000 : 30000
 
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
         fetchTasks()
       }
-    }, 5000)
+    }, intervalMs)
 
     return () => window.clearInterval(interval)
-  }, [user, hasActiveTasks, fetchTasks])
+  }, [user, hasActiveTasks, expandedId, fetchTasks])
 
   function handleTabChange(value: TaskStatus | 'ALL') {
     setStatusFilter(value)
