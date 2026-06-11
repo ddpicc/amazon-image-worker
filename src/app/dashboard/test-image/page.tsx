@@ -15,6 +15,9 @@ interface ProviderOption {
   model: string
   baseUrl: string
   enabled: boolean
+  cooldownUntil?: string | null
+  circuitBreakerTrippedAt?: string | null
+  circuitBreakerTripReason?: string | null
 }
 
 interface TaskAsset {
@@ -61,6 +64,26 @@ interface DirectTestResult {
   imageBase64: string
 }
 
+function getProviderState(provider: ProviderOption): 'TRIPPED' | 'DISABLED' | 'COOLDOWN' | 'ENABLED' {
+  if (provider.circuitBreakerTrippedAt) return 'TRIPPED'
+  if (!provider.enabled) return 'DISABLED'
+  if (provider.cooldownUntil && new Date(provider.cooldownUntil).getTime() > Date.now()) return 'COOLDOWN'
+  return 'ENABLED'
+}
+
+function providerStateBadgeClass(state: ReturnType<typeof getProviderState>): string {
+  switch (state) {
+    case 'TRIPPED':
+      return 'bg-red-100 text-red-800'
+    case 'DISABLED':
+      return 'bg-gray-200 text-gray-700'
+    case 'COOLDOWN':
+      return 'bg-yellow-100 text-yellow-800'
+    default:
+      return 'bg-green-100 text-green-800'
+  }
+}
+
 const DEFAULT_PROMPT = 'A premium ecommerce studio photo of a ceramic mug with soft shadow and clean white background'
 
 function formatDuration(ms: number | null): string {
@@ -88,6 +111,7 @@ export default function AdminTestImagePage() {
   const [requestId, setRequestId] = useState('')
   const [task, setTask] = useState<TaskDetail | null>(null)
   const [directResult, setDirectResult] = useState<DirectTestResult | null>(null)
+  const [resettingBreaker, setResettingBreaker] = useState(false)
   const [error, setError] = useState('')
 
   const isActiveTask = useMemo(
@@ -133,7 +157,7 @@ export default function AdminTestImagePage() {
           throw new Error(json?.error || `Failed to load providers (${res.status})`)
         }
 
-        const nextProviders = (json?.data || []).filter((provider: ProviderOption) => provider.enabled)
+        const nextProviders = json?.data || []
         if (!cancelled) {
           setProviders(nextProviders)
           setSelectedProviderId((current) => current || nextProviders[0]?.id || '')
@@ -286,6 +310,53 @@ export default function AdminTestImagePage() {
     }
   }
 
+  async function handleResetBreaker() {
+    if (!directResult?.provider.id) {
+      return
+    }
+
+    setResettingBreaker(true)
+    setError('')
+
+    try {
+      const res = await fetch(`/api/v1/providers/${directResult.provider.id}/reset-breaker`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) {
+        throw new Error(json?.error || 'Failed to reset breaker')
+      }
+
+      setProviders((current) => current.map((provider) => (
+        provider.id === directResult.provider.id
+          ? {
+              ...provider,
+              enabled: true,
+              cooldownUntil: null,
+              circuitBreakerTrippedAt: null,
+              circuitBreakerTripReason: null,
+            }
+          : provider
+      )))
+
+      setDirectResult((current) => current ? {
+        ...current,
+        provider: {
+          ...current.provider,
+          enabled: true,
+          cooldownUntil: null,
+          circuitBreakerTrippedAt: null,
+          circuitBreakerTripReason: null,
+        },
+      } : current)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset breaker')
+    } finally {
+      setResettingBreaker(false)
+    }
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading...</div></div>
   }
@@ -339,11 +410,14 @@ export default function AdminTestImagePage() {
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">Select a provider</option>
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name} · {provider.vendor} · {provider.model}
-                  </option>
-                ))}
+                {providers.map((provider) => {
+                  const state = getProviderState(provider)
+                  return (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name} · {provider.vendor} · {provider.model} · {state}
+                    </option>
+                  )
+                })}
               </select>
               <p className="mt-1 text-xs text-gray-500">Direct mode bypasses internal enqueue/worker and calls the selected provider directly.</p>
             </div>
@@ -495,8 +569,15 @@ export default function AdminTestImagePage() {
               <h3 className="text-lg font-semibold text-gray-900">Direct Provider Test Result</h3>
               <p className="mt-1 text-sm text-gray-500 break-all">{directResult.prompt}</p>
             </div>
-            <div className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
-              SUCCESS
+            <div className="text-right space-y-2">
+              <div className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
+                SUCCESS
+              </div>
+              <div>
+                <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ${providerStateBadgeClass(getProviderState(directResult.provider))}`}>
+                  {getProviderState(directResult.provider)}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -524,10 +605,27 @@ export default function AdminTestImagePage() {
             <div><span className="font-medium">Base URL:</span> {directResult.provider.baseUrl}</div>
             <div><span className="font-medium">Returned kind:</span> {directResult.returnedImageUrlKind}</div>
             <div><span className="font-medium">MIME type:</span> {directResult.mimeType}</div>
+            {directResult.provider.circuitBreakerTripReason && (
+              <div className="text-red-700"><span className="font-medium">Trip reason:</span> {directResult.provider.circuitBreakerTripReason}</div>
+            )}
             {directResult.upstreamImageUrl && (
               <div className="break-all"><span className="font-medium">Upstream URL:</span> {directResult.upstreamImageUrl}</div>
             )}
           </div>
+
+          {(getProviderState(directResult.provider) === 'TRIPPED' || getProviderState(directResult.provider) === 'DISABLED') && (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleResetBreaker}
+                disabled={resettingBreaker}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {resettingBreaker ? 'Resetting...' : 'Reset breaker'}
+              </button>
+              <span className="text-xs text-gray-500">Test succeeded. You can manually restore this provider to service.</span>
+            </div>
+          )}
 
           {directResult.revisedPrompt !== directResult.prompt && (
             <div>
