@@ -44,7 +44,7 @@ export function getImageGenerationQueueName() {
 }
 
 export function buildImageGenerationJobId(requestId: string, enqueueVersion: number) {
-  return `${requestId}:${enqueueVersion}`
+  return `${requestId}__v${enqueueVersion}`
 }
 
 export async function enqueueImageGeneration(params: {
