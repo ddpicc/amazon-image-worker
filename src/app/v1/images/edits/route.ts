@@ -9,12 +9,20 @@ import { lookupSizePrice } from '@/lib/billing/billing-service'
 import type { RenderSize } from '@/lib/image-options'
 
 const ALLOWED_MODEL = 'gpt-image-2'
-const ALLOWED_QUALITIES = new Set(['low', 'medium', 'high'])
 
 function isHttpsUrl(value: string) {
   try {
     const url = new URL(value)
     return url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
   } catch {
     return false
   }
@@ -36,17 +44,28 @@ export async function POST(request: NextRequest) {
     const {
       model = ALLOWED_MODEL,
       prompt,
+      image,
       size = 'auto',
       quality = 'medium',
       n = 1,
       callback_url,
+      mask_url,
     } = body as {
       model?: string
       prompt?: string
+      image?: string[]
       size?: string
       quality?: string
       n?: number
       callback_url?: string
+      mask_url?: string
+    }
+
+    if (mask_url !== undefined) {
+      return NextResponse.json(
+        { error: 'mask_url is not supported' },
+        { status: 400 },
+      )
     }
 
     if (model !== ALLOWED_MODEL) {
@@ -86,6 +105,36 @@ export async function POST(request: NextRequest) {
         { error: 'quality must be one of low, medium, high' },
         { status: 400 },
       )
+    }
+
+    if (typeof quality !== 'string' || !ALLOWED_QUALITIES.has(quality)) {
+      return NextResponse.json(
+        { error: 'quality must be one of low, medium, high' },
+        { status: 400 },
+      )
+    }
+
+    if (!Array.isArray(image) || image.length === 0) {
+      return NextResponse.json(
+        { error: 'image is required, at least 1 image must be provided' },
+        { status: 400 },
+      )
+    }
+
+    if (image.length > 16) {
+      return NextResponse.json(
+        { error: 'image supports up to 16 images' },
+        { status: 400 },
+      )
+    }
+
+    for (const url of image) {
+      if (typeof url !== 'string' || !isValidHttpUrl(url)) {
+        return NextResponse.json(
+          { error: 'image must contain valid http/https URLs' },
+          { status: 400 },
+        )
+      }
     }
 
     const resolvedSize = resolvePublicImageSize(size)
@@ -145,17 +194,24 @@ export async function POST(request: NextRequest) {
       apiKeyId: auth.apiKeyId,
       prompt: prompt.trim(),
       originalPrompt: prompt.trim(),
-      entryApi: 'openai-images-generations',
-      imageType: 'generate',
+      entryApi: 'openai-images-edits',
+      imageType: 'edit',
       aspectRatio: null,
       size: resolvedSize as RenderSize,
-      referenceImages: [],
+      referenceImages: image.map((url, index) => ({
+        url,
+        key: `remote-ref-${index}`,
+        mimeType: 'image/png',
+        bytes: 0,
+        name: `reference-${index}`,
+      })),
       metadata: {
         source: 'openai-compatible',
         model,
         quality,
         requestedSize: size,
         n,
+        image,
       },
       callbackUrl: callback_url ?? null,
     })

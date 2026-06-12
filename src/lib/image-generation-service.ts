@@ -100,10 +100,6 @@ function buildImageEditParams(params: {
     prompt: params.prompt,
     n: 1,
     size: params.size,
-    input_fidelity: 'high',
-    quality: 'medium',
-    response_format: 'url',
-    output_format: 'png',
   } as any
 }
 

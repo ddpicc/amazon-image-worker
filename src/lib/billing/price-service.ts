@@ -113,46 +113,14 @@ export async function ensureDefaultSizePrices(updatedBy?: string) {
 // for the public image generation endpoint
 // ============================================================
 
-type Resolution = '1K' | '2K' | '4K'
-type PublicImageSize = string // ratio like "1:1", "2:3", pixels like "1024x1024", or "auto"
-
-interface SizeMapping {
-  size: string
-  price: number | null
-}
-
-// Map ratio + resolution to our RenderSize values
-const RATIO_RESOLUTION_MAP: Record<string, Record<Resolution, string>> = {
-  '1:1': {
-    '1K': '1024x1024',
-    '2K': '2048x2048',
-    '4K': '2048x2048', // We don't have 2880x2880, cap at 2048
-  },
-  '3:2': {
-    '1K': '1536x1024',
-    '2K': '2048x1365',
-    '4K': '2048x1365', // Cap at our max
-  },
-  '2:3': {
-    '1K': '1024x1536',
-    '2K': '1365x2048',
-    '4K': '1365x2048',
-  },
-  '2:1': {
-    '1K': '1024x640',
-    '2K': '1024x640', // We don't have 2896x1456
-    '4K': '1024x640',
-  },
-  '8:5': {
-    '1K': '1024x640',
-    '2K': '1536x960',
-    '4K': '1536x960',
-  },
-  '16:9': {
-    '1K': '1536x960',
-    '2K': '1536x960',
-    '4K': '1536x960',
-  },
+// Map ratio to a single default pixel size
+const RATIO_SIZE_MAP: Record<string, string> = {
+  '1:1': '1024x1024',
+  '3:2': '1536x1024',
+  '2:3': '1024x1536',
+  '2:1': '1024x640',
+  '8:5': '1024x640',
+  '16:9': '1536x960',
 }
 
 // Supported pixel sizes in our system
@@ -170,8 +138,7 @@ const VALID_PIXEL_SIZES = new Set([
  * @returns The resolved size and whether it's supported, or null if unsupported
  */
 export function resolvePublicImageSize(
-  sizeParam: PublicImageSize,
-  resolution: Resolution = '1K',
+  sizeParam: string,
 ): string | null {
   if (!sizeParam || sizeParam === 'auto') {
     return '1024x1024' // default
@@ -190,16 +157,9 @@ export function resolvePublicImageSize(
   }
 
   // Ratio format: "1:1", "2:3", "16:9", etc.
-  const ratioMap = RATIO_RESOLUTION_MAP[normalized] || RATIO_RESOLUTION_MAP[sizeParam]
-  if (ratioMap) {
-    return ratioMap[resolution]
-  }
-
-  // Try to parse other ratio formats like "2:1" → check our map
-  for (const [ratio, resMap] of Object.entries(RATIO_RESOLUTION_MAP)) {
-    if (sizeParam === ratio) {
-      return resMap[resolution]
-    }
+  const mapped = RATIO_SIZE_MAP[normalized] || RATIO_SIZE_MAP[sizeParam]
+  if (mapped) {
+    return mapped
   }
 
   return null

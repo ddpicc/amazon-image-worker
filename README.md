@@ -136,7 +136,8 @@ R2_PUBLIC_BASE_URL=
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/v1/images/generations` | 提交图片生成任务 |
+| POST | `/v1/images/generations` | 提交图片生成任务（文生图） |
+| POST | `/v1/images/edits` | 提交图片编辑任务（图生图） |
 | GET | `/v1/images/tasks/:id` | 查询单个任务状态与结果 |
 
 ### 后台任务接口（Dashboard / 管理查询）
@@ -164,7 +165,7 @@ R2_PUBLIC_BASE_URL=
 
 ## 路由约定
 
-- 对外异步生图统一使用 `/v1/images/generations` 和 `/v1/images/tasks/:id`
+- 对外异步生图统一使用 `/v1/images/generations`、`/v1/images/edits` 和 `/v1/images/tasks/:id`
 - `/api/v1/tasks*` 只给 Dashboard / 管理侧的任务列表和详情用
 - Provider、统计、API Key、告警等后台接口继续使用 `/api/v1/*`
 
