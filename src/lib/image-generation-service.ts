@@ -115,7 +115,6 @@ function buildImageGenerateParams(params: {
     size: params.size,
     quality: 'medium',
     response_format: 'url',
-    output_format: 'png',
   } as any
 }
 
