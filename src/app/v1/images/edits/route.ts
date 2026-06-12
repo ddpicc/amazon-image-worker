@@ -8,7 +8,7 @@ import { resolvePublicImageSize } from '@/lib/billing/price-service'
 import { lookupSizePrice } from '@/lib/billing/billing-service'
 import type { RenderSize } from '@/lib/image-options'
 
-const ALLOWED_MODEL = 'gpt-image-2'
+const ALLOWED_MODELS = new Set(['gpt-image-2', 'agnes-image-2.1-flash'])
 
 function isHttpsUrl(value: string) {
   try {
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const {
-      model = ALLOWED_MODEL,
+      model = 'gpt-image-2',
       prompt,
       image,
       size = 'auto',
@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (model !== ALLOWED_MODEL) {
+    if (!ALLOWED_MODELS.has(model)) {
       return NextResponse.json(
-        { error: `Only model=${ALLOWED_MODEL} is supported` },
+        { error: `Model not supported. Use one of: ${[...ALLOWED_MODELS].join(', ')}` },
         { status: 400 },
       )
     }
@@ -176,6 +176,7 @@ export async function POST(request: NextRequest) {
 
     const submitResult = await createQueuedImageGenerationRequest({
       apiKeyId: auth.apiKeyId,
+      model,
       prompt: prompt.trim(),
       originalPrompt: prompt.trim(),
       entryApi: 'openai-images-edits',
@@ -211,7 +212,7 @@ export async function POST(request: NextRequest) {
       {
         created: Math.floor(Date.now() / 1000),
         id: submitResult.requestId,
-        model: ALLOWED_MODEL,
+        model,
         object: 'image.edit.task',
         progress: 0,
         status: 'pending',

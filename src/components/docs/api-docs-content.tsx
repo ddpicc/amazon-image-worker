@@ -55,16 +55,16 @@ const callbackNote = `The callback response body matches the task query response
 The \`object\` field is \`"image.generation.task"\` for text-to-image tasks and \`"image.edit.task"\` for image editing tasks.`
 
 const createGenerationsRequestFields = [
-  ['model', '`gpt-image-2` only. Required.'],
+  ['model', 'Required. Supported: `gpt-image-2`, `agnes-image-2.1-flash`.'],
   ['prompt', 'Required. Up to 32000 characters.'],
   ['size', 'Optional. Supports `auto`, aspect ratios like `16:9`, or explicit sizes like `1024x1024`.'],
-  ['quality', 'Optional. `low`, `medium`, `high`. Default `medium`.'],
+  ['quality', 'Optional. `low`, `medium`, `high`. Default `medium`. Only supported by `gpt-image-2`.'],
   ['n', 'Optional. Currently only `1` is supported.'],
   ['callback_url', 'Optional. HTTPS callback URL triggered when the task completes or fails.'],
 ]
 
 const createEditsRequestFields = [
-  ['model', '`gpt-image-2` only. Required.'],
+  ['model', 'Required. Supported: `gpt-image-2`, `agnes-image-2.1-flash`.'],
   ['prompt', 'Required. Up to 32000 characters. Describes the edit to apply.'],
   ['image', 'Required. 1-16 reference image URLs (HTTP/HTTPS). The source images to edit.'],
   ['size', 'Optional. Supports `auto`, aspect ratios like `16:9`, or explicit sizes like `1024x1024`.'],

@@ -19,6 +19,7 @@ export interface RouteSummary {
 }
 
 export interface PersistedImageGenerationPayload {
+  model?: string | null
   prompt: string
   originalPrompt: string
   imageType?: string | null

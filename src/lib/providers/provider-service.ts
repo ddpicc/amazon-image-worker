@@ -44,12 +44,17 @@ function normalizeProviderBaseUrl(baseUrl: string): string {
 
 // --- Provider Selection (Smart Routing) ---
 
-export async function selectProviders(weights?: ScoringWeights): Promise<ScoredProvider[]> {
+export async function selectProviders(model?: string | null, weights?: ScoringWeights): Promise<ScoredProvider[]> {
   const now = new Date()
 
-  // Fetch all enabled providers
+  // Fetch all enabled providers, optionally filtered by model
+  const where: { enabled: boolean; model?: string } = { enabled: true }
+  if (model) {
+    where.model = model
+  }
+
   const providers = await prisma.imageProvider.findMany({
-    where: { enabled: true },
+    where,
     orderBy: { priority: 'asc' },
   })
 

@@ -332,6 +332,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
     requestId: requestRecord.id,
     operationId: operation.id,
     apiKeyId,
+    model: null,
     prompt,
     referenceImages,
     size,
@@ -346,6 +347,7 @@ async function runImageGenerationForExistingRequest(params: {
   requestId: string
   operationId: string
   apiKeyId: string
+  model?: string | null
   prompt: string
   referenceImages: Array<{ data: string; mediaType: string }>
   size: RenderSize
@@ -354,7 +356,7 @@ async function runImageGenerationForExistingRequest(params: {
   metadata?: Record<string, unknown>
   onStatus?: (message: string) => Promise<void> | void
 }): Promise<GenerateImageOutput> {
-  const { requestId, operationId, apiKeyId, prompt, referenceImages, size, aspectRatio, imageType, onStatus } = params
+  const { requestId, operationId, apiKeyId, model, prompt, referenceImages, size, aspectRatio, imageType, onStatus } = params
   const mode = referenceImages.length > 0 ? 'edit' : 'generate'
   const startedAt = Date.now()
 
@@ -365,7 +367,7 @@ async function runImageGenerationForExistingRequest(params: {
     }
   }
 
-  const scoredProviders = await selectProviders()
+  const scoredProviders = await selectProviders(model ?? undefined)
   const providers = scoredProviders.map(sp => sp.provider)
 
   if (providers.length === 0) {
@@ -770,6 +772,7 @@ async function runImageGenerationForExistingRequest(params: {
 }
 
 export async function buildPersistedImageGenerationPayload(params: {
+  model?: string | null
   prompt: string
   originalPrompt: string
   imageType?: string | null
@@ -780,6 +783,7 @@ export async function buildPersistedImageGenerationPayload(params: {
   callbackUrl?: string | null
 }): Promise<PersistedImageGenerationPayload> {
   return {
+    model: params.model ?? null,
     prompt: params.prompt,
     originalPrompt: params.originalPrompt,
     imageType: params.imageType ?? null,
@@ -793,6 +797,7 @@ export async function buildPersistedImageGenerationPayload(params: {
 
 export async function createQueuedImageGenerationRequest(params: {
   apiKeyId: string
+  model?: string | null
   prompt: string
   originalPrompt: string
   entryApi?: string
@@ -832,6 +837,7 @@ export async function createQueuedImageGenerationRequest(params: {
   })
 
   const requestPayload = await buildPersistedImageGenerationPayload({
+    model: params.model ?? null,
     prompt: params.prompt,
     originalPrompt: params.originalPrompt,
     imageType: params.imageType ?? null,
@@ -925,6 +931,7 @@ export async function executeQueuedImageGeneration(requestId: string) {
       requestId: request.id,
       operationId: request.operationId,
       apiKeyId: request.apiKeyId,
+      model: payload.model ?? null,
       prompt: payload.prompt,
       referenceImages,
       size: payload.size,
