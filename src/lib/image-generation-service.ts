@@ -88,6 +88,14 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
   })
 }
 
+function isAgnesImageModel(model: string): boolean {
+  return model === 'agnes-image-2.1-flash'
+}
+
+function toDataUri(referenceImage: { data: string; mediaType: string }): string {
+  return `data:${referenceImage.mediaType || 'image/jpeg'};base64,${referenceImage.data}`
+}
+
 function buildImageEditParams(params: {
   model: string
   image: File[]
@@ -100,6 +108,23 @@ function buildImageEditParams(params: {
     prompt: params.prompt,
     n: 1,
     size: params.size,
+  } as any
+}
+
+function buildAgnesImageEditParams(params: {
+  model: string
+  image: string[]
+  prompt: string
+  size: RenderSize
+}) {
+  return {
+    model: params.model,
+    prompt: params.prompt,
+    size: params.size,
+    extra_body: {
+      image: params.image,
+      response_format: 'url',
+    },
   } as any
 }
 
@@ -396,6 +421,7 @@ async function runImageGenerationForExistingRequest(params: {
   }
 
   const imageFiles = referenceImages.slice(0, 16).map(toImageFile)
+  const agnesEditImages = referenceImages.slice(0, 16).map(toDataUri)
   const errors: string[] = []
   const attemptedLines: RouteSummary['attemptedLines'] = []
   let capacityBlocked = false
@@ -483,12 +509,19 @@ async function runImageGenerationForExistingRequest(params: {
         const extracted = await (async () => {
           const client = createOpenAIClient(apiKey, provider.baseUrl)
           const response = mode === 'edit'
-            ? await client.images.edit(buildImageEditParams({
-                model: provider.model,
-                image: imageFiles,
-                prompt,
-                size,
-              }))
+            ? isAgnesImageModel(provider.model)
+              ? await client.images.generate(buildAgnesImageEditParams({
+                  model: provider.model,
+                  image: agnesEditImages,
+                  prompt,
+                  size,
+                }))
+              : await client.images.edit(buildImageEditParams({
+                  model: provider.model,
+                  image: imageFiles,
+                  prompt,
+                  size,
+                }))
             : await client.images.generate(buildImageGenerateParams({
                 model: provider.model,
                 prompt,

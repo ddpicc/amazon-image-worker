@@ -28,6 +28,10 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
   })
 }
 
+function isAgnesImageModel(model: string): boolean {
+  return model === 'agnes-image-2.1-flash'
+}
+
 function buildImageGenerateParams(params: { model: string; prompt: string; size: RenderSize }) {
   return {
     model: params.model,
@@ -36,6 +40,18 @@ function buildImageGenerateParams(params: { model: string; prompt: string; size:
     size: params.size,
     quality: 'medium',
     // response_format removed — not supported by agnes-image-2.1-flash (LiteLLM).
+  } as any
+}
+
+function buildAgnesImageEditParams(params: { model: string; imageUrls: string[]; prompt: string; size: RenderSize }) {
+  return {
+    model: params.model,
+    prompt: params.prompt,
+    size: params.size,
+    extra_body: {
+      image: params.imageUrls,
+      response_format: 'url',
+    },
   } as any
 }
 
@@ -197,6 +213,15 @@ export async function testImageProviderDirect(params: {
 
     const response = mode === 'edit'
       ? await (async () => {
+          if (isAgnesImageModel(provider.model)) {
+            return client.images.generate(buildAgnesImageEditParams({
+              model: provider.model,
+              imageUrls,
+              prompt: params.prompt,
+              size: params.size,
+            }))
+          }
+
           const imageFiles = await Promise.all(imageUrls.map(async (url, index) => {
             const res = await fetch(url)
             if (!res.ok) {
