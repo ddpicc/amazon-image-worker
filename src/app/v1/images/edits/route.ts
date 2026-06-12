@@ -46,7 +46,6 @@ export async function POST(request: NextRequest) {
       prompt,
       image,
       size = 'auto',
-      quality = 'medium',
       n = 1,
       callback_url,
       mask_url,
@@ -55,7 +54,6 @@ export async function POST(request: NextRequest) {
       prompt?: string
       image?: string[]
       size?: string
-      quality?: string
       n?: number
       callback_url?: string
       mask_url?: string
@@ -96,20 +94,6 @@ export async function POST(request: NextRequest) {
     if (n !== 1) {
       return NextResponse.json(
         { error: 'Only n=1 is supported currently' },
-        { status: 400 },
-      )
-    }
-
-    if (typeof quality !== 'string' || !ALLOWED_QUALITIES.has(quality)) {
-      return NextResponse.json(
-        { error: 'quality must be one of low, medium, high' },
-        { status: 400 },
-      )
-    }
-
-    if (typeof quality !== 'string' || !ALLOWED_QUALITIES.has(quality)) {
-      return NextResponse.json(
-        { error: 'quality must be one of low, medium, high' },
         { status: 400 },
       )
     }
@@ -208,7 +192,6 @@ export async function POST(request: NextRequest) {
       metadata: {
         source: 'openai-compatible',
         model,
-        quality,
         requestedSize: size,
         n,
         image,
@@ -229,7 +212,7 @@ export async function POST(request: NextRequest) {
         created: Math.floor(Date.now() / 1000),
         id: submitResult.requestId,
         model: ALLOWED_MODEL,
-        object: 'image.generation.task',
+        object: 'image.edit.task',
         progress: 0,
         status: 'pending',
         task_info: {

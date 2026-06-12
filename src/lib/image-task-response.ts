@@ -26,43 +26,63 @@ function mapStatus(status: GenerationStatus) {
 
 export function buildImageTaskResponse(task: ImageTaskWithAssets) {
   const created = Math.floor(task.createdAt.getTime() / 1000)
-  const status = mapStatus(task.status)
-  const progress = status === 'completed'
+  const publicStatus = mapStatus(task.status)
+  const progress = publicStatus === 'completed'
     ? 100
-    : status === 'processing'
+    : publicStatus === 'processing'
       ? 50
-      : status === 'failed'
+      : publicStatus === 'failed'
         ? 100
         : 0
-  const latestUrl = task.assets[0]?.cosUrl || null
+
+  const completed = publicStatus === 'completed'
+  const failed = task.status === 'FAILED'
+
+  let errorCode: string | undefined
+  if (failed && task.errorMessage) {
+    const message = task.errorMessage
+    if (message.includes('No enabled image providers')) {
+      errorCode = 'no_provider_available'
+    } else if (message.includes('capacity')) {
+      errorCode = 'capacity_exceeded'
+    } else if (message.includes('All image providers failed') || message.includes('调用失败')) {
+      errorCode = 'provider_failed'
+    } else {
+      errorCode = 'task_failed'
+    }
+  }
+
+  const data = completed
+    ? task.assets.map((asset) => ({
+        url: asset.cosUrl,
+        revised_prompt: task.revisedPrompt || undefined,
+      }))
+    : undefined
 
   return {
     created,
     id: task.id,
-    model: 'gpt-image-2',
-    object: 'image.generation.task',
+    model: task.selectedProviderModel || 'gpt-image-2',
+    object: task.imageType === 'edit' ? 'image.edit.task' : 'image.generation.task',
     progress,
-    status,
-    task_info: {
-      type: 'image',
-    },
+    status: publicStatus,
+    task_info: { type: 'image' as const },
+    ...(data ? { data } : {}),
+    ...(failed
+      ? {
+          error: {
+            code: errorCode || 'task_failed',
+            message: task.errorMessage || 'Unknown error',
+          },
+        }
+      : { error: null }),
+    size: task.size ?? undefined,
+    image_type: task.imageType ?? undefined,
+    revised_prompt: task.revisedPrompt ?? undefined,
     usage: {
-      cost: task.cost !== null ? Number(task.cost) : null,
-      cost_status: task.costStatus ?? null,
+      cost: task.cost !== null ? Number(task.cost) : undefined,
+      cost_status: task.costStatus ?? undefined,
       currency: 'USD',
     },
-    data: status === 'completed' && latestUrl
-      ? [
-          {
-            url: latestUrl,
-            revised_prompt: task.revisedPrompt,
-          },
-        ]
-      : [],
-    error: status === 'failed'
-      ? {
-          message: task.errorMessage || task.statusMessage || 'Generation failed',
-        }
-      : null,
   }
 }

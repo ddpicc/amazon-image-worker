@@ -18,7 +18,6 @@ const createEditsTaskExample = `curl -X POST "$BASE_URL/v1/images/edits" \\
     "prompt": "Add a sunset background to this image",
     "image": ["https://example.com/input-image.png"],
     "size": "1024x1024",
-    "quality": "medium",
     "n": 1,
     "callback_url": "https://your-domain.com/webhooks/image-task-completed"
   }'`
@@ -69,7 +68,6 @@ const createEditsRequestFields = [
   ['prompt', 'Required. Up to 32000 characters. Describes the edit to apply.'],
   ['image', 'Required. 1-16 reference image URLs (HTTP/HTTPS). The source images to edit.'],
   ['size', 'Optional. Supports `auto`, aspect ratios like `16:9`, or explicit sizes like `1024x1024`.'],
-  ['quality', 'Optional. `low`, `medium`, `high`. Default `medium`.'],
   ['n', 'Optional. Currently only `1` is supported.'],
   ['callback_url', 'Optional. HTTPS callback URL triggered when the task completes or fails.'],
 ]
@@ -78,10 +76,10 @@ const createResponseFields = [
   ['created', 'Unix timestamp when the task was created.'],
   ['id', 'Task ID. Use this value to query task status later.'],
   ['model', 'Actual model used for generation.'],
-  ['object', 'Always `image.generation.task`.'],
+  ['object', '`image.generation.task` for text-to-image, `image.edit.task` for image editing.'],
   ['progress', 'Task progress from `0` to `100`.'],
   ['status', '`pending`, `processing`, `completed`, or `failed`.'],
-  ['task_info', 'Task metadata. `type` is currently always `image`.'],
+  ['task_info', 'Task metadata. `type` is always `image`.'],
   ['usage', 'Billing information including unit price / total cost at submission time.'],
 ]
 
@@ -105,13 +103,6 @@ const errorRows = [
   ['500', 'Internal server error.'],
 ]
 
-const errorCodes = [
-  ['no_provider_available', 'No enabled image providers are configured.'],
-  ['provider_failed', 'All upstream providers failed to generate the image.'],
-  ['capacity_exceeded', 'All providers were at capacity and retries were exhausted.'],
-  ['task_failed', 'An unexpected error occurred during task execution.'],
-]
-
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="text-2xl font-semibold text-gray-900">{children}</h2>
 }
@@ -124,16 +115,39 @@ function CodeBlock({ children }: { children: string }) {
   )
 }
 
-function CreateTaskSection({ endpoint, method, description, fields, example }: {
+function FieldTable({ rows }: { rows: string[][] }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+      <table className="min-w-full text-sm">
+        <thead className="bg-gray-50 text-left text-gray-600">
+          <tr>
+            <th className="px-4 py-3 font-medium">Field</th>
+            <th className="px-4 py-3 font-medium">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([name, description]) => (
+            <tr key={name} className="border-t border-gray-100 align-top">
+              <td className="px-4 py-3 font-mono text-gray-900">{name}</td>
+              <td className="px-4 py-3 text-gray-700">{description}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function CreateTaskSection({ title, endpoint, description, fields, example }: {
+  title: string
   endpoint: string
-  method: string
   description: string
   fields: string[][]
   example: string
 }) {
   return (
     <section className="space-y-4">
-      <SectionTitle>Create Image {method} Task</SectionTitle>
+      <SectionTitle>{title}</SectionTitle>
       <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm text-gray-700">
         <div className="font-mono text-gray-950">POST {endpoint}</div>
         <p className="mt-2">{description}</p>
