@@ -39,6 +39,24 @@ function buildImageGenerateParams(params: { model: string; prompt: string; size:
   } as any
 }
 
+function buildImageEditParams(params: { model: string; image: File[]; prompt: string; size: RenderSize }) {
+  return {
+    model: params.model,
+    image: params.image,
+    prompt: params.prompt,
+    n: 1,
+    size: params.size,
+  } as any
+}
+
+function getExtensionFromMediaType(mediaType: string): string {
+  if (mediaType === 'image/png') return 'png'
+  if (mediaType === 'image/webp') return 'webp'
+  if (mediaType === 'image/gif') return 'gif'
+  if (mediaType === 'image/jpeg') return 'jpg'
+  return 'bin'
+}
+
 function parseDataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
   if (!match) {
@@ -141,8 +159,10 @@ export interface DirectProviderTestResult {
     model: string
     enabled: boolean
   }
+  mode: 'generate' | 'edit'
   prompt: string
   size: RenderSize
+  referenceImageUrls: string[]
   durationMs: number
   revisedPrompt: string
   returnedImageUrlKind: 'data-url' | 'remote-url' | 'b64-json'
@@ -156,6 +176,7 @@ export async function testImageProviderDirect(params: {
   providerId: string
   prompt: string
   size: RenderSize
+  imageUrls?: string[]
 }): Promise<DirectProviderTestResult> {
   const provider = await getProvider(params.providerId)
   if (!provider) {
@@ -166,16 +187,38 @@ export async function testImageProviderDirect(params: {
     throw new Error('Provider is disabled')
   }
 
+  const imageUrls = (params.imageUrls || []).slice(0, 16)
+  const mode = imageUrls.length > 0 ? 'edit' as const : 'generate' as const
   const startedAt = Date.now()
 
   try {
     const apiKey = decryptSecret(provider.apiKeyCiphertext)
     const client = createOpenAIClient(apiKey, provider.baseUrl)
-    const response = await client.images.generate(buildImageGenerateParams({
-      model: provider.model,
-      prompt: params.prompt,
-      size: params.size,
-    }))
+
+    const response = mode === 'edit'
+      ? await (async () => {
+          const imageFiles = await Promise.all(imageUrls.map(async (url, index) => {
+            const res = await fetch(url)
+            if (!res.ok) {
+              throw new Error(`Failed to download reference image: ${res.status}`)
+            }
+            const arrayBuffer = await res.arrayBuffer()
+            const contentType = res.headers.get('content-type') || 'image/png'
+            const ext = getExtensionFromMediaType(contentType)
+            return new File([arrayBuffer], `reference-${index}.${ext}`, { type: contentType })
+          }))
+          return client.images.edit(buildImageEditParams({
+            model: provider.model,
+            image: imageFiles,
+            prompt: params.prompt,
+            size: params.size,
+          }))
+        })()
+      : await client.images.generate(buildImageGenerateParams({
+          model: provider.model,
+          prompt: params.prompt,
+          size: params.size,
+        }))
 
     const imageData = getCompatibleImageData(response)
     if (!imageData) {
@@ -194,8 +237,10 @@ export async function testImageProviderDirect(params: {
         model: provider.model,
         enabled: provider.enabled,
       },
+      mode,
       prompt: params.prompt,
       size: params.size,
+      referenceImageUrls: imageUrls,
       durationMs: Date.now() - startedAt,
       revisedPrompt,
       returnedImageUrlKind: extracted.returnedKind,

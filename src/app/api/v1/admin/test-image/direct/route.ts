@@ -13,10 +13,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { providerId, prompt, size = '1024x1024' } = body as {
+    const { providerId, prompt, size = '1024x1024', image_urls } = body as {
       providerId?: string
       prompt?: string
       size?: RenderSize
+      image_urls?: string[]
     }
 
     if (!providerId || typeof providerId !== 'string') {
@@ -35,10 +36,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unsupported size' }, { status: 400 })
     }
 
+    const imageUrls = Array.isArray(image_urls) ? image_urls.filter((u): u is string => typeof u === 'string' && /^https?:\/\//i.test(u)).slice(0, 16) : []
+
     const data = await testImageProviderDirect({
       providerId,
       prompt: prompt.trim(),
       size,
+      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
     })
 
     return NextResponse.json({ data })

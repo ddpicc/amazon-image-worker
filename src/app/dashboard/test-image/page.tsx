@@ -53,8 +53,10 @@ interface TaskDetail {
 
 interface DirectTestResult {
   provider: ProviderOption
+  mode: 'generate' | 'edit'
   prompt: string
   size: string
+  referenceImageUrls: string[]
   durationMs: number
   revisedPrompt: string
   returnedImageUrlKind: 'data-url' | 'remote-url' | 'b64-json'
@@ -85,6 +87,8 @@ function providerStateBadgeClass(state: ReturnType<typeof getProviderState>): st
 }
 
 const DEFAULT_PROMPT = 'A premium ecommerce studio photo of a ceramic mug with soft shadow and clean white background'
+const DEFAULT_EDIT_PROMPT = 'Transform the scene into a rain-soaked cyberpunk night with neon reflections'
+const DEFAULT_REFERENCE_IMAGE = 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/300px-PNG_transparency_demonstration_1.png'
 
 function formatDuration(ms: number | null): string {
   if (ms == null) return '-'
@@ -106,6 +110,8 @@ export default function AdminTestImagePage() {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [size, setSize] = useState('1024x1024')
   const [mode, setMode] = useState<TestMode>('queue')
+  const [editMode, setEditMode] = useState(false)
+  const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([''])
   const [providers, setProviders] = useState<ProviderOption[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [requestId, setRequestId] = useState('')
@@ -222,6 +228,33 @@ export default function AdminTestImagePage() {
     }
   }, [requestId, isActiveTask, mode])
 
+  function addReferenceImage() {
+    setReferenceImageUrls((current) => current.length < 16 ? [...current, ''] : current)
+  }
+
+  function updateReferenceImage(index: number, value: string) {
+    setReferenceImageUrls((current) => current.map((url, i) => i === index ? value : url))
+  }
+
+  function removeReferenceImage(index: number) {
+    setReferenceImageUrls((current) => {
+      if (current.length <= 1) return ['']
+      return current.filter((_, i) => i !== index)
+    })
+  }
+
+  useEffect(() => {
+    if (editMode) {
+      setPrompt(DEFAULT_EDIT_PROMPT)
+      if (referenceImageUrls.length === 1 && referenceImageUrls[0] === '') {
+        setReferenceImageUrls([DEFAULT_REFERENCE_IMAGE])
+      }
+    } else {
+      setPrompt(DEFAULT_PROMPT)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
@@ -243,20 +276,30 @@ export default function AdminTestImagePage() {
 
         const testRawKey = keyJson.data.key as string
 
-        const submitRes = await fetch('/v1/images/generations', {
+        const endpoint = editMode ? '/v1/images/edits' : '/v1/images/generations'
+        const body: Record<string, unknown> = {
+          prompt: prompt.trim(),
+          size,
+          metadata: {
+            source: 'admin-test-image-page',
+            submittedAt: new Date().toISOString(),
+          },
+        }
+        if (editMode) {
+          const urls = referenceImageUrls.map((u) => u.trim()).filter(Boolean)
+          if (urls.length === 0) {
+            throw new Error('At least one reference image URL is required for edit mode')
+          }
+          body.image = urls
+        }
+
+        const submitRes = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${testRawKey}`,
           },
-          body: JSON.stringify({
-            prompt: prompt.trim(),
-            size,
-            metadata: {
-              source: 'admin-test-image-page',
-              submittedAt: new Date().toISOString(),
-            },
-          }),
+          body: JSON.stringify(body),
         })
         const submitJson = await submitRes.json().catch(() => null)
         if (!submitRes.ok) {
@@ -285,17 +328,26 @@ export default function AdminTestImagePage() {
         throw new Error('Please select a provider')
       }
 
+      const directBody: Record<string, unknown> = {
+        providerId: selectedProviderId,
+        prompt: prompt.trim(),
+        size,
+      }
+      if (editMode) {
+        const urls = referenceImageUrls.map((u) => u.trim()).filter(Boolean)
+        if (urls.length === 0) {
+          throw new Error('At least one reference image URL is required for edit mode')
+        }
+        directBody.image_urls = urls
+      }
+
       const directRes = await fetch('/api/v1/admin/test-image/direct', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({
-          providerId: selectedProviderId,
-          prompt: prompt.trim(),
-          size,
-        }),
+        body: JSON.stringify(directBody),
       })
       const directJson = await directRes.json().catch(() => null)
       if (!directRes.ok) {
@@ -366,7 +418,7 @@ export default function AdminTestImagePage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Test Image</h2>
-          <p className="mt-1 text-sm text-gray-500">管理员测试页。既可以测试真实队列提交流程，也可以直接测试单个 provider。</p>
+          <p className="mt-1 text-sm text-gray-500">管理员测试页。既可以测试真实队列提交流程，也可以直接测试单个 provider。支持文生图和图生图。</p>
         </div>
         <Link href="/dashboard/tasks" className="text-sm text-blue-600 hover:text-blue-700">
           View All Tasks
@@ -386,7 +438,7 @@ export default function AdminTestImagePage() {
                   checked={mode === 'queue'}
                   onChange={() => setMode('queue')}
                 />
-                Queue test (/v1/images/generations)
+                Queue test
               </label>
               <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                 <input
@@ -397,6 +449,30 @@ export default function AdminTestImagePage() {
                   onChange={() => setMode('direct')}
                 />
                 Direct provider test
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Image Type</label>
+            <div className="flex flex-wrap gap-3">
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
+                  name="editMode"
+                  checked={!editMode}
+                  onChange={() => setEditMode(false)}
+                />
+                Text-to-Image (generate)
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
+                  name="editMode"
+                  checked={editMode}
+                  onChange={() => setEditMode(true)}
+                />
+                Image-to-Image (edit)
               </label>
             </div>
           </div>
@@ -420,6 +496,41 @@ export default function AdminTestImagePage() {
                 })}
               </select>
               <p className="mt-1 text-xs text-gray-500">Direct mode bypasses internal enqueue/worker and calls the selected provider directly.</p>
+            </div>
+          )}
+
+          {editMode && (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">Reference Image URLs (1-16)</label>
+              {referenceImageUrls.map((url, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={url}
+                    onChange={(e) => updateReferenceImage(index, e.target.value)}
+                    placeholder="https://example.com/input-image.png"
+                    className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeReferenceImage(index)}
+                    disabled={referenceImageUrls.length <= 1}
+                    className="rounded-md border border-gray-200 px-2 py-2 text-sm text-red-500 hover:bg-red-50 disabled:opacity-30"
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addReferenceImage}
+                disabled={referenceImageUrls.length >= 16}
+                className="text-sm text-blue-600 hover:text-blue-700 disabled:opacity-30"
+              >
+                + Add reference image ({referenceImageUrls.length}/16)
+              </button>
+              <p className="text-xs text-gray-400">Publicly accessible HTTP/HTTPS image URLs only.</p>
             </div>
           )}
 
@@ -591,12 +702,31 @@ export default function AdminTestImagePage() {
               <div className="mt-1 text-sm font-medium text-gray-900">{directResult.provider.model}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Mode</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.mode === 'edit' ? 'Edit (image-to-image)' : 'Generate'}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Duration</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{formatDuration(directResult.durationMs)}</div>
             </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Image Size</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{formatBytes(directResult.bytes)}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">MIME Type</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.mimeType}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Returned Kind</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.returnedImageUrlKind}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Ref Images</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.referenceImageUrls.length}</div>
             </div>
           </div>
 
@@ -612,6 +742,26 @@ export default function AdminTestImagePage() {
               <div className="break-all"><span className="font-medium">Upstream URL:</span> {directResult.upstreamImageUrl}</div>
             )}
           </div>
+
+          {directResult.referenceImageUrls.length > 0 && (
+            <div>
+              <h4 className="mb-2 text-sm font-medium text-gray-900">Reference Images</h4>
+              <div className="flex flex-wrap gap-3">
+                {directResult.referenceImageUrls.map((url, index) => (
+                  <a
+                    key={index}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block overflow-hidden rounded-lg border border-gray-200 bg-gray-50"
+                  >
+                    <img src={url} alt={`Reference ${index + 1}`} className="h-32 w-32 object-cover" />
+                    <div className="border-t border-gray-200 px-2 py-1 text-xs text-gray-500">#{index + 1}</div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(getProviderState(directResult.provider) === 'TRIPPED' || getProviderState(directResult.provider) === 'DISABLED') && (
             <div className="flex items-center gap-3">
