@@ -114,7 +114,7 @@ function buildImageGenerateParams(params: {
     n: 1,
     size: params.size,
     quality: 'medium',
-    response_format: 'url',
+    // response_format removed — not supported by agnes-image-2.1-flash (LiteLLM).
   } as any
 }
 
