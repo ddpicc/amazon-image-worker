@@ -88,25 +88,6 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
   })
 }
 
-function getProviderBaseUrl(baseUrl: string): string {
-  const normalized = baseUrl.trim().replace(/\/+$/, '')
-
-  try {
-    const url = new URL(normalized)
-    const pathname = url.pathname.replace(/\/+$/, '')
-    if (!pathname || pathname === '/') {
-      url.pathname = '/v1'
-    }
-    return url.toString().replace(/\/+$/, '')
-  } catch {
-    return normalized
-  }
-}
-
-function isEvolinkProvider(vendor: string, baseUrl: string): boolean {
-  return vendor.toLowerCase() === 'evolink' || /evolink\.ai/i.test(baseUrl)
-}
-
 function buildImageEditParams(params: {
   model: string
   image: File[]
@@ -240,136 +221,6 @@ async function extractUpstreamImage(imageData: any): Promise<{ buffer: Buffer; m
   }
 
   throw new Error('Upstream image response did not include url or b64_json')
-}
-
-function getExtensionFromMimeType(mimeType: string): string {
-  return getExtensionFromMediaType(mimeType)
-}
-
-async function uploadReferenceImagesForProvider(params: {
-  requestId: string
-  referenceImages: Array<{ data: string; mediaType: string }>
-}) {
-  const now = new Date()
-  const yyyy = String(now.getUTCFullYear())
-  const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(now.getUTCDate()).padStart(2, '0')
-  const env = process.env.NODE_ENV || 'development'
-
-  return Promise.all(params.referenceImages.slice(0, 16).map(async (image, index) => {
-    const buffer = Buffer.from(image.data, 'base64')
-    const ext = getExtensionFromMimeType(image.mediaType)
-    const key = `provider-inputs/${env}/${yyyy}/${mm}/${dd}/${params.requestId}-${index + 1}.${ext}`
-
-    const uploaded = await uploadBufferToObjectStorage({
-      buffer,
-      key,
-      contentType: image.mediaType || 'image/jpeg',
-    })
-
-    return uploaded.url
-  }))
-}
-
-async function pollEvolinkTask(params: {
-  baseUrl: string
-  apiKey: string
-  taskId: string
-  timeoutMs?: number
-  intervalMs?: number
-}): Promise<{ status: string; results?: string[]; error?: { message?: string } }> {
-  const timeoutMs = params.timeoutMs ?? PROVIDER_TIMEOUT_MS
-  const intervalMs = params.intervalMs ?? 3_000
-  const deadline = Date.now() + timeoutMs
-
-  while (Date.now() < deadline) {
-    const response = await fetch(`${getProviderBaseUrl(params.baseUrl)}/tasks/${params.taskId}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${params.apiKey}`,
-      },
-
-      signal: createTimeoutSignal(timeoutMs),
-    })
-
-    const payload = await response.json().catch(() => null) as any
-    if (!response.ok) {
-      throw new Error(payload?.error?.message || payload?.message || `Evolink task query failed: ${response.status}`)
-    }
-
-    if (payload?.status === 'completed') {
-      return payload
-    }
-
-    if (payload?.status === 'failed') {
-      throw new Error(payload?.error?.message || payload?.message || 'Evolink task failed')
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, intervalMs))
-  }
-
-  throw new Error('Evolink task timed out')
-}
-
-async function requestEvolinkImage(params: {
-  requestId: string
-  apiKey: string
-  baseUrl: string
-  model: string
-  prompt: string
-  size: RenderSize
-  referenceImages: Array<{ data: string; mediaType: string }>
-}): Promise<{ buffer: Buffer; mimeType: string; returnedKind: 'remote-url' }> {
-  const imageUrls = params.referenceImages.length > 0
-    ? await uploadReferenceImagesForProvider({
-        requestId: params.requestId,
-        referenceImages: params.referenceImages,
-      })
-    : []
-
-  const createResponse = await fetch(`${getProviderBaseUrl(params.baseUrl)}/images/generations`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${params.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: params.model,
-      prompt: params.prompt,
-      size: params.size,
-      n: 1,
-      ...(imageUrls.length > 0 ? { image_urls: imageUrls } : {}),
-    }),
-    signal: createTimeoutSignal(PROVIDER_TIMEOUT_MS),
-  })
-
-  const createPayload = await createResponse.json().catch(() => null) as any
-  if (!createResponse.ok) {
-    throw new Error(createPayload?.error?.message || createPayload?.message || `Evolink task creation failed: ${createResponse.status}`)
-  }
-
-  const taskId = createPayload?.id
-  if (!taskId) {
-    throw new Error('Evolink task creation did not return a task id')
-  }
-
-  const taskResult = await pollEvolinkTask({
-    baseUrl: params.baseUrl,
-    apiKey: params.apiKey,
-    taskId,
-  })
-
-  const resultUrl = Array.isArray(taskResult.results) ? taskResult.results[0] : ''
-  if (!resultUrl) {
-    throw new Error('Evolink task completed without image results')
-  }
-
-  const downloaded = await downloadRemoteImage(resultUrl)
-  return {
-    buffer: downloaded.buffer,
-    mimeType: downloaded.mimeType,
-    returnedKind: 'remote-url',
-  }
 }
 
 function buildCosKey(requestId: string, mimeType: string): string {
@@ -632,46 +483,36 @@ async function runImageGenerationForExistingRequest(params: {
 
         const revisedPrompt = prompt
         const upstreamStartedAt = Date.now()
-        const extracted = isEvolinkProvider(provider.vendor, provider.baseUrl)
-          ? await requestEvolinkImage({
-              requestId: requestId,
-              apiKey,
-              baseUrl: provider.baseUrl,
-              model: provider.model,
-              prompt,
-              size,
-              referenceImages,
-            })
-          : await (async () => {
-              const client = createOpenAIClient(apiKey, provider.baseUrl)
-              const response = mode === 'edit'
-                ? await client.images.edit(buildImageEditParams({
-                    model: provider.model,
-                    image: imageFiles,
-                    prompt,
-                    size,
-                  }))
-                : await client.images.generate(buildImageGenerateParams({
-                    model: provider.model,
-                    prompt,
-                    size,
-                  }))
+        const extracted = await (async () => {
+          const client = createOpenAIClient(apiKey, provider.baseUrl)
+          const response = mode === 'edit'
+            ? await client.images.edit(buildImageEditParams({
+                model: provider.model,
+                image: imageFiles,
+                prompt,
+                size,
+              }))
+            : await client.images.generate(buildImageGenerateParams({
+                model: provider.model,
+                prompt,
+                size,
+              }))
 
-              const imageData = getCompatibleImageData(response)
-              if (!imageData) {
-                throw new Error(`${provider.name}: No image data returned from upstream provider. Raw keys: ${Object.keys(response || {}).join(',')}`)
-              }
+          const imageData = getCompatibleImageData(response)
+          if (!imageData) {
+            throw new Error(`${provider.name}: No image data returned from upstream provider. Raw keys: ${Object.keys(response || {}).join(',')}`)
+          }
 
-              try {
-                return {
-                  ...(await extractUpstreamImage(imageData)),
-                  revisedPrompt: imageData.revised_prompt || imageData.revisedPrompt || prompt,
-                }
-              } catch (extractError) {
-                const extractMessage = extractError instanceof Error ? extractError.message : String(extractError)
-                throw new Error(`${provider.name}: ${extractMessage}. imageData keys: ${Object.keys(imageData || {}).join(',')}`)
-              }
-            })()
+          try {
+            return {
+              ...(await extractUpstreamImage(imageData)),
+              revisedPrompt: imageData.revised_prompt || imageData.revisedPrompt || prompt,
+            }
+          } catch (extractError) {
+            const extractMessage = extractError instanceof Error ? extractError.message : String(extractError)
+            throw new Error(`${provider.name}: ${extractMessage}. imageData keys: ${Object.keys(imageData || {}).join(',')}`)
+          }
+        })()
         const upstreamMs = Date.now() - upstreamStartedAt
 
         const cosKey = buildCosKey(requestId, extracted.mimeType)

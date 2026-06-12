@@ -163,12 +163,17 @@ curl https://你的域名.up.railway.app/api/v1/stats/overview
 3. **添加 Provider** → Providers 页 → "Add Provider" → 填写 AI 服务的 API 信息
 4. **提交测试任务**：
    ```bash
-   curl -X POST https://你的域名/api/v1/tasks \
+   curl -X POST https://你的域名/v1/images/generations \
      -H "Authorization: Bearer imgw_你拿到的密钥" \
      -H "Content-Type: application/json" \
-     -d '{"prompt": "test image", "size": "1024x1024"}'
+     -d '{"model":"gpt-image-2","prompt":"test image","size":"1024x1024"}'
    ```
-5. **查看任务** → Dashboard → Tasks 页
+5. **查询单个任务**：
+   ```bash
+   curl https://你的域名/v1/images/tasks/任务ID \
+     -H "Authorization: Bearer imgw_你拿到的密钥"
+   ```
+6. **查看任务列表** → Dashboard → Tasks 页（内部走 `/api/v1/tasks`）
 
 ---
 
@@ -176,29 +181,45 @@ curl https://你的域名.up.railway.app/api/v1/stats/overview
 
 ```javascript
 // 主应用调用示例
-const response = await fetch('https://你的域名/api/v1/tasks', {
+const response = await fetch('https://你的域名/v1/images/generations', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer imgw_你的API_KEY',
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
+    model: 'gpt-image-2',
     prompt: '产品图片描述',
     size: '1024x1024',
-    referenceImages: [{
-      data: base64EncodedImage,
-      mediaType: 'image/png'
-    }],
+    image_urls: ['https://example.com/reference.png'],
   }),
 })
 
-const { requestId, status } = await response.json()
+const { id, status } = await response.json()
 
 // 查询结果
-const result = await fetch(`https://你的域名/api/v1/tasks/${requestId}`, {
+const result = await fetch(`https://你的域名/v1/images/tasks/${id}`, {
   headers: { 'Authorization': 'Bearer imgw_你的API_KEY' },
 })
 ```
+
+---
+
+## Evolink Provider 清理
+
+如果你之前配置过 `vendor = evolink` 或 `baseUrl` 指向 Evolink 的 provider，升级到当前版本后建议执行一次清理：
+
+```bash
+npm run providers:evolink:report
+npm run providers:evolink:disable
+npm run providers:evolink:purge
+```
+
+建议顺序：
+
+1. 先 `report` 看命中的 provider
+2. 确认已经有替代 provider 后执行 `disable`
+3. 观察一段时间没问题后再 `purge`
 
 ---
 

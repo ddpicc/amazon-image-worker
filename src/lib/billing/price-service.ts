@@ -110,11 +110,11 @@ export async function ensureDefaultSizePrices(updatedBy?: string) {
 
 // ============================================================
 // Size/Resolution/AspectRatio mapping helpers
-// for the OpenAI/Evolink-compatible endpoint
+// for the public image generation endpoint
 // ============================================================
 
 type Resolution = '1K' | '2K' | '4K'
-type EvolinkSize = string // ratio like "1:1", "2:3", pixels like "1024x1024", or "auto"
+type PublicImageSize = string // ratio like "1:1", "2:3", pixels like "1024x1024", or "auto"
 
 interface SizeMapping {
   size: string
@@ -164,13 +164,13 @@ const VALID_PIXEL_SIZES = new Set([
 ])
 
 /**
- * Resolve the Evolink/OpenAI-style size parameter + resolution
+ * Resolve the public API size parameter + resolution
  * to our internal RenderSize.
  *
  * @returns The resolved size and whether it's supported, or null if unsupported
  */
-export function resolveEvolinkSize(
-  sizeParam: EvolinkSize,
+export function resolvePublicImageSize(
+  sizeParam: PublicImageSize,
   resolution: Resolution = '1K',
 ): string | null {
   if (!sizeParam || sizeParam === 'auto') {

@@ -132,11 +132,17 @@ R2_PUBLIC_BASE_URL=
 
 ## API 端点
 
-### 任务接口（API Key 鉴权）
+### 对外图片接口（API Key 鉴权）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/tasks` | 提交图片生成任务 |
+| POST | `/v1/images/generations` | 提交图片生成任务 |
+| GET | `/v1/images/tasks/:id` | 查询单个任务状态与结果 |
+
+### 后台任务接口（Dashboard / 管理查询）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | GET | `/api/v1/tasks` | 任务列表（分页） |
 | GET | `/api/v1/tasks/:id` | 任务详情（含 attempts） |
 
@@ -155,6 +161,30 @@ R2_PUBLIC_BASE_URL=
 | PUT/DELETE | `/api/v1/api-keys/:id` | 更新/吊销 |
 | GET/POST | `/api/v1/alerts/rules` | 告警规则 |
 | GET | `/api/v1/alerts/events` | 告警事件 |
+
+## 路由约定
+
+- 对外异步生图统一使用 `/v1/images/generations` 和 `/v1/images/tasks/:id`
+- `/api/v1/tasks*` 只给 Dashboard / 管理侧的任务列表和详情用
+- Provider、统计、API Key、告警等后台接口继续使用 `/api/v1/*`
+
+## Evolink 清理
+
+`Evolink` 的 provider 专用执行线路已经移除，worker 现在只保留通用 OpenAI-compatible 调用链。
+
+如果数据库里还有历史 `vendor` 或 `baseUrl` 指向 Evolink 的 provider，按这个顺序清理：
+
+```bash
+npm run providers:evolink:report
+npm run providers:evolink:disable
+npm run providers:evolink:purge
+```
+
+说明：
+
+- `report`：只扫描，不改数据
+- `disable`：批量禁用匹配到的 provider，并写入停用原因
+- `purge`：删除已经处于禁用状态的 Evolink provider 记录
 
 ## 智能路由
 
