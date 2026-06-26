@@ -86,7 +86,7 @@ function providerStateBadgeClass(state: ReturnType<typeof getProviderState>): st
   }
 }
 
-const DEFAULT_PROMPT = 'A premium ecommerce studio photo of a ceramic mug with soft shadow and clean white background'
+const DEFAULT_PROMPT = '一位女性身穿半透明丝质面料的 editorial 风格人像，硬朗电影感主光，35mm 胶片颗粒，冷中性色调，杂志封面质感。'
 const DEFAULT_EDIT_PROMPT = 'Transform the scene into a rain-soaked cyberpunk night with neon reflections'
 const DEFAULT_REFERENCE_IMAGE = 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/300px-PNG_transparency_demonstration_1.png'
 

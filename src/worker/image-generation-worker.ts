@@ -7,6 +7,8 @@ import { snapshotProviderStats } from '../lib/providers/stats-snapshot'
 import { resetDailyQuotas, resetMonthlyQuotas } from '../lib/auth/quota-reset'
 import { refundBalance } from '../lib/billing/billing-service'
 import { dispatchImageTaskCallback } from '../lib/image-task-callback'
+import { reconcileTimedOutBillableImageTasks } from '../lib/image-task-submission'
+import { logger } from '../lib/logger'
 
 const QUEUE_NAME = getImageGenerationQueueName()
 const PROVIDER_CAPACITY_REQUEUE_DELAY_MS = 10_000
@@ -14,6 +16,7 @@ const PROVIDER_CAPACITY_REQUEUE_DELAY_MS = 10_000
 // Scheduled intervals
 const STATS_SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000   // 15 minutes
 const DAILY_QUOTA_CHECK_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
+const TASK_RECONCILE_INTERVAL_MS = 5 * 60 * 1000
 
 const scheduledTimers: NodeJS.Timeout[] = []
 
@@ -46,9 +49,28 @@ function startScheduledJobs() {
   }, DAILY_QUOTA_CHECK_INTERVAL_MS)
   scheduledTimers.push(quotaTimer)
 
+  const taskReconcileTimer = setInterval(async () => {
+    try {
+      const result = await reconcileTimedOutBillableImageTasks()
+      if (result.reconciled > 0) {
+        console.warn('[scheduler] reconciled timed out image tasks', result)
+      }
+    } catch (error) {
+      console.error('[scheduler] task reconcile failed', error)
+    }
+  }, TASK_RECONCILE_INTERVAL_MS)
+  scheduledTimers.push(taskReconcileTimer)
+
   // Run initial snapshot
   snapshotProviderStats().catch(err => {
     console.error('[scheduler] initial stats snapshot failed', err)
+  })
+  reconcileTimedOutBillableImageTasks().then((result) => {
+    if (result.reconciled > 0) {
+      console.warn('[scheduler] initial timed out image task reconcile completed', result)
+    }
+  }).catch(err => {
+    console.error('[scheduler] initial task reconcile failed', err)
   })
 
   console.info('[scheduler] scheduled jobs started')
@@ -89,7 +111,7 @@ function stopScheduledJobs() {
 }
 
 async function main() {
-  console.info('[worker] starting image-generation worker')
+  logger.info('worker.starting', { queueName: QUEUE_NAME })
 
   const redisUrl = requireRedisUrl()
 
@@ -97,12 +119,12 @@ async function main() {
     QUEUE_NAME,
     async (job) => {
       const { requestId } = job.data
-      console.info('[worker] processing job', { jobId: job.id, requestId })
+      logger.info('worker.job.processing', { jobId: job.id, requestId })
 
       try {
         const result = await executeQueuedImageGeneration(requestId)
         const status = 'status' in result ? (result as any).status : 'completed'
-        console.info('[worker] job completed', {
+        logger.info('worker.job.completed', {
           jobId: job.id,
           requestId,
           status,
@@ -125,7 +147,7 @@ async function main() {
             },
           }).catch(() => undefined)
 
-          console.info('[worker] requeued job due to provider capacity', {
+          logger.info('worker.job.requeued_capacity', {
             jobId: job.id,
             requestId,
             nextJobId: nextJob.id,
@@ -140,10 +162,10 @@ async function main() {
           }
         }
 
-        console.error('[worker] job failed', {
+        logger.error('worker.job.failed', {
           jobId: job.id,
           requestId,
-          error: error instanceof Error ? error.message : String(error),
+          error,
         })
 
         try {
@@ -173,7 +195,7 @@ async function main() {
               request.id,
               'generation_failed',
             )
-            console.info('[worker] refunded failed request', {
+            logger.info('worker.job.refunded_failed_request', {
               requestId,
               amount: Number(request.cost),
             })
@@ -197,9 +219,9 @@ async function main() {
             }
           }
         } catch (refundError) {
-          console.error('[worker] refund failed', {
+          logger.error('worker.job.refund_failed', {
             requestId,
-            error: refundError instanceof Error ? refundError.message : String(refundError),
+            error: refundError,
           })
         }
 
@@ -213,27 +235,27 @@ async function main() {
   )
 
   worker.on('completed', (job) => {
-    console.info('[worker] job completed', { jobId: job.id })
+    logger.info('worker.event.completed', { jobId: job.id })
   })
 
   worker.on('failed', (job, err) => {
-    console.error('[worker] job failed', {
+    logger.error('worker.event.failed', {
       jobId: job?.id,
-      error: err.message,
+      error: err,
     })
   })
 
   worker.on('error', (err) => {
-    console.error('[worker] worker error', { error: err.message })
+    logger.error('worker.error', { error: err })
   })
 
   // Start scheduled jobs (stats snapshot, quota resets)
   startScheduledJobs()
 
-  console.info('[worker] image-generation worker ready, waiting for jobs...')
+  logger.info('worker.ready', { queueName: QUEUE_NAME })
 
   const shutdown = async () => {
-    console.info('[worker] shutting down...')
+    logger.info('worker.shutdown')
     stopScheduledJobs()
     await worker.close()
     await prisma.$disconnect()
@@ -245,6 +267,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[worker] fatal error', error)
+  logger.error('worker.fatal', { error })
   process.exit(1)
 })

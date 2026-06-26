@@ -3,9 +3,17 @@ import { prisma } from '@/lib/db/prisma'
 import { verifyPassword } from '@/lib/auth/password'
 import { createSession, getSessionCookieOptions, SESSION_COOKIE_NAME } from '@/lib/auth/session'
 import { ensureBootstrapAdmin } from '@/lib/auth/bootstrap-admin'
+import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
+    const rateLimitResponse = await enforceRateLimit(request, {
+      key: `auth:login:${getClientIp(request)}`,
+      limit: 20,
+      windowSeconds: 15 * 60,
+    })
+    if (rateLimitResponse) return rateLimitResponse
+
     await ensureBootstrapAdmin()
 
     const { email, password } = await request.json()

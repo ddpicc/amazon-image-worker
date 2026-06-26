@@ -1,4 +1,6 @@
 import { buildImageTaskResponse } from '@/lib/image-task-response'
+import { prisma } from '@/lib/db/prisma'
+import { logger } from '@/lib/logger'
 
 function isPrivateHostname(hostname: string) {
   const value = hostname.toLowerCase()
@@ -25,6 +27,11 @@ export async function dispatchImageTaskCallback(params: {
   }
 
   if (parsed.protocol !== 'https:' || isPrivateHostname(parsed.hostname)) {
+    logger.warn('webhook.delivery.skipped', {
+      requestId: params.task.id,
+      reason: 'invalid_callback_url',
+      callbackUrl: params.callbackUrl,
+    })
     return
   }
 
@@ -38,6 +45,15 @@ export async function dispatchImageTaskCallback(params: {
 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 10_000)
+    const startedAt = Date.now()
+    const delivery = await prisma.webhookDelivery.create({
+      data: {
+        requestId: params.task.id,
+        callbackUrl: parsed.toString(),
+        attemptIndex: attempt + 1,
+        status: 'STARTED',
+      },
+    })
 
     try {
       const response = await fetch(parsed.toString(), {
@@ -46,12 +62,51 @@ export async function dispatchImageTaskCallback(params: {
         body: JSON.stringify(payload),
         signal: controller.signal,
       })
+      const responseBodySample = await response.text().catch(() => '')
+      const durationMs = Date.now() - startedAt
+
+      await prisma.webhookDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: response.ok ? 'SUCCEEDED' : 'FAILED',
+          httpStatus: response.status,
+          durationMs,
+          responseBodySample: responseBodySample.slice(0, 1000) || null,
+          completedAt: new Date(),
+        },
+      }).catch(() => undefined)
+
+      logger.info('webhook.delivery.completed', {
+        requestId: params.task.id,
+        deliveryId: delivery.id,
+        attemptIndex: attempt + 1,
+        httpStatus: response.status,
+        durationMs,
+        ok: response.ok,
+      })
 
       if (response.ok) {
         return
       }
-    } catch {
-      // Retry on next iteration
+    } catch (error) {
+      const durationMs = Date.now() - startedAt
+      const message = error instanceof Error ? error.message : String(error)
+      await prisma.webhookDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: 'FAILED',
+          durationMs,
+          errorMessage: message,
+          completedAt: new Date(),
+        },
+      }).catch(() => undefined)
+      logger.warn('webhook.delivery.failed', {
+        requestId: params.task.id,
+        deliveryId: delivery.id,
+        attemptIndex: attempt + 1,
+        durationMs,
+        error: message,
+      })
     } finally {
       clearTimeout(timeout)
     }

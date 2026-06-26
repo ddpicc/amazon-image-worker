@@ -228,9 +228,13 @@ model ImageGenerationRequest {
   responseSnapshotJson    Json?
   errorMessage            String?
   callbackUrl             String?
+  idempotencyKey          String?
   metadata                Json?
   cost                    Decimal?
   costStatus              CostStatus?
+  pricingSku              String?
+  unitPrice               Decimal?                 @db.Decimal(10, 4)
+  priceVersion            Int?
   capacityRequeueCount    Int                      @default(0)
   workerJobId             String?
   queuedAt                DateTime?
@@ -243,11 +247,13 @@ model ImageGenerationRequest {
   selectedProvider        ImageProvider?           @relation(fields: [selectedProviderId], references: [id], onDelete: SetNull)
   attempts                ImageGenerationAttempt[]
   assets                  GeneratedImageAsset[]
+  webhookDeliveries       WebhookDelivery[]
 
   @@index([apiKeyId, createdAt(sort: Desc)])
   @@index([createdAt(sort: Desc)])
   @@index([selectedProviderId])
   @@index([status, createdAt(sort: Desc)])
+  @@unique([apiKeyId, idempotencyKey])
 }
 
 model ImageGenerationAttempt {
@@ -275,6 +281,24 @@ model ImageGenerationAttempt {
   @@index([providerId])
   @@index([errorType, startedAt(sort: Desc)])
   @@index([providerId, startedAt(sort: Desc)])
+}
+
+model WebhookDelivery {
+  id                 String                 @id @default(cuid())
+  requestId          String
+  callbackUrl        String
+  attemptIndex       Int
+  status             AttemptStatus          @default(STARTED)
+  httpStatus         Int?
+  durationMs         Int?
+  errorMessage       String?
+  responseBodySample String?
+  createdAt          DateTime               @default(now())
+  completedAt        DateTime?
+  request            ImageGenerationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
 }
 
 model GeneratedImageAsset {
@@ -410,22 +434,6 @@ model AlertEvent {
 }
 
 // ============================================================
-// Size Price — 尺寸定价表（管理员管理）
-// ============================================================
-
-model SizePrice {
-  id        String   @id @default(cuid())
-  size      String   @unique   // "1024x1024" 等，对应 RenderSize
-  price     Decimal  @db.Decimal(10, 4)
-  enabled   Boolean  @default(true)
-  updatedBy String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([enabled])
-}
-
-// ============================================================
 // Balance Log — 余额变动日志（管理员调整、充值等）
 // ============================================================
 
@@ -442,4 +450,35 @@ model BalanceLog {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([status])
+}
+
+model PricingSku {
+  id        String                   @id @default(cuid())
+  sku       String                   @unique
+  label     String
+  price     Decimal                  @db.Decimal(10, 4)
+  version   Int                      @default(1)
+  enabled   Boolean                  @default(true)
+  updatedBy String?
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+  history   PricingSkuPriceHistory[]
+
+  @@index([enabled])
+}
+
+model PricingSkuPriceHistory {
+  id           String     @id @default(cuid())
+  pricingSkuId String
+  sku          String
+  version      Int
+  price        Decimal    @db.Decimal(10, 4)
+  enabled      Boolean
+  updatedBy    String?
+  createdAt    DateTime   @default(now())
+  pricingSku   PricingSku @relation(fields: [pricingSkuId], references: [id], onDelete: Cascade)
+
+  @@unique([sku, version])
+  @@index([pricingSkuId, version])
+  @@index([sku, createdAt(sort: Desc)])
 }

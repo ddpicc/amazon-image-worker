@@ -6,6 +6,9 @@ interface UsageRow {
   id: string
   prompt: string
   size: string | null
+  pricingSku: string | null
+  unitPrice: number | null
+  priceVersion: number | null
   cost: number | null
   costStatus: string | null
   status: string
@@ -176,6 +179,8 @@ export default function UsagePage() {
               <th className="px-4 py-3 text-left font-medium">API Key</th>
               <th className="px-4 py-3 text-left font-medium">Prompt</th>
               <th className="px-4 py-3 text-left font-medium">Size</th>
+              <th className="px-4 py-3 text-left font-medium">SKU</th>
+              <th className="px-4 py-3 text-left font-medium">Unit Price</th>
               <th className="px-4 py-3 text-left font-medium">Cost</th>
               <th className="px-4 py-3 text-left font-medium">Cost Status</th>
               <th className="px-4 py-3 text-left font-medium">Task Status</th>
@@ -188,6 +193,8 @@ export default function UsagePage() {
                 <td className="px-4 py-3 text-gray-900">{row.apiKeyName}</td>
                 <td className="px-4 py-3 text-gray-900 max-w-xl truncate" title={row.prompt}>{row.prompt}</td>
                 <td className="px-4 py-3 text-gray-700">{row.size || '-'}</td>
+                <td className="px-4 py-3 text-gray-700">{row.pricingSku || '-'}{row.priceVersion ? ` v${row.priceVersion}` : ''}</td>
+                <td className="px-4 py-3 text-gray-900">{row.unitPrice !== null ? `$${row.unitPrice.toFixed(4)}` : '-'}</td>
                 <td className="px-4 py-3 text-gray-900">{row.cost !== null ? `$${row.cost.toFixed(4)}` : '-'}</td>
                 <td className="px-4 py-3 text-gray-700">{row.costStatus || '-'}</td>
                 <td className="px-4 py-3 text-gray-700">{row.status}</td>

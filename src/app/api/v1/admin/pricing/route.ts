@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminRequest } from '@/lib/auth/request-auth'
 import {
-  batchSetSizePrices,
-  ensureDefaultSizePrices,
-  listSizePrices,
+  batchSetPricingSkus,
+  ensureDefaultPricingSkus,
+  listPricingSkus,
 } from '@/lib/billing/price-service'
+
+const ALLOWED_PRICING_SKUS = new Set(['image_1k', 'image_2k'])
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,14 +15,16 @@ export async function GET(request: NextRequest) {
       return result.error
     }
 
-    await ensureDefaultSizePrices(result.auth.userId)
-    const prices = await listSizePrices()
+    await ensureDefaultPricingSkus(result.auth.userId)
+    const prices = await listPricingSkus()
 
     return NextResponse.json({
       prices: prices.map((row) => ({
         id: row.id,
-        size: row.size,
+        sku: row.sku,
+        label: row.label,
         price: Number(row.price),
+        version: row.version,
         enabled: row.enabled,
         updatedBy: row.updatedBy,
         createdAt: row.createdAt,
@@ -47,24 +51,29 @@ export async function POST(request: NextRequest) {
     }
 
     for (const row of rows) {
-      if (!row || typeof row.size !== 'string' || typeof row.price !== 'number') {
+      if (!row || typeof row.sku !== 'string' || typeof row.price !== 'number') {
         return NextResponse.json(
-          { error: 'each price row must contain size and price' },
+          { error: 'each price row must contain sku and price' },
           { status: 400 },
         )
+      }
+      if (!ALLOWED_PRICING_SKUS.has(row.sku)) {
+        return NextResponse.json({ error: `unsupported pricing sku: ${row.sku}` }, { status: 400 })
       }
       if (row.price < 0) {
         return NextResponse.json({ error: 'price must be >= 0' }, { status: 400 })
       }
     }
 
-    const updated = await batchSetSizePrices(rows, result.auth.userId)
+    const updated = await batchSetPricingSkus(rows, result.auth.userId)
 
     return NextResponse.json({
       prices: updated.map((row) => ({
         id: row.id,
-        size: row.size,
+        sku: row.sku,
+        label: row.label,
         price: Number(row.price),
+        version: row.version,
         enabled: row.enabled,
         updatedBy: row.updatedBy,
         createdAt: row.createdAt,

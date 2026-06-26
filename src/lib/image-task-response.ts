@@ -24,6 +24,45 @@ function mapStatus(status: GenerationStatus) {
   }
 }
 
+function publicErrorFromMessage(message: string | null | undefined) {
+  if (!message) {
+    return {
+      code: 'task_failed',
+      message: 'The image task failed. Please retry or contact support with the task id.',
+    }
+  }
+
+  if (message.includes('No enabled image providers')) {
+    return {
+      code: 'no_provider_available',
+      message: 'No image provider is currently available. Please retry later.',
+    }
+  }
+  if (message.includes('capacity') || message.includes('满载')) {
+    return {
+      code: 'capacity_exceeded',
+      message: 'The image service is currently busy. Please retry later.',
+    }
+  }
+  if (message.includes('timed out') || message.includes('timeout') || message.includes('超时')) {
+    return {
+      code: 'task_timeout',
+      message: 'The image task timed out. Please retry later.',
+    }
+  }
+  if (message.includes('All image providers failed') || message.includes('调用失败')) {
+    return {
+      code: 'provider_failed',
+      message: 'The image provider failed to complete the request. Please retry later.',
+    }
+  }
+
+  return {
+    code: 'task_failed',
+    message: 'The image task failed. Please retry or contact support with the task id.',
+  }
+}
+
 export function buildImageTaskResponse(task: ImageTaskWithAssets) {
   const created = Math.floor(task.createdAt.getTime() / 1000)
   const publicStatus = mapStatus(task.status)
@@ -38,19 +77,7 @@ export function buildImageTaskResponse(task: ImageTaskWithAssets) {
   const completed = publicStatus === 'completed'
   const failed = task.status === 'FAILED'
 
-  let errorCode: string | undefined
-  if (failed && task.errorMessage) {
-    const message = task.errorMessage
-    if (message.includes('No enabled image providers')) {
-      errorCode = 'no_provider_available'
-    } else if (message.includes('capacity')) {
-      errorCode = 'capacity_exceeded'
-    } else if (message.includes('All image providers failed') || message.includes('调用失败')) {
-      errorCode = 'provider_failed'
-    } else {
-      errorCode = 'task_failed'
-    }
-  }
+  const publicError = failed ? publicErrorFromMessage(task.errorMessage) : null
 
   const data = completed
     ? task.assets.map((asset) => ({
@@ -70,16 +97,16 @@ export function buildImageTaskResponse(task: ImageTaskWithAssets) {
     ...(data ? { data } : {}),
     ...(failed
       ? {
-          error: {
-            code: errorCode || 'task_failed',
-            message: task.errorMessage || 'Unknown error',
-          },
+          error: publicError,
         }
       : { error: null }),
     size: task.size ?? undefined,
     image_type: task.imageType ?? undefined,
     revised_prompt: task.revisedPrompt ?? undefined,
     usage: {
+      sku: task.pricingSku ?? undefined,
+      unit_price: task.unitPrice !== null ? Number(task.unitPrice) : undefined,
+      price_version: task.priceVersion ?? undefined,
       cost: task.cost !== null ? Number(task.cost) : undefined,
       cost_status: task.costStatus ?? undefined,
       currency: 'USD',

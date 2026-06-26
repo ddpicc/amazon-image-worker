@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
       where.status = status
     }
 
+    const isAdmin = auth.role === 'ADMIN'
     const [tasks, total] = await Promise.all([
       prisma.imageGenerationRequest.findMany({
         where,
@@ -47,8 +48,18 @@ export async function GET(request: NextRequest) {
           selectedProviderName: true,
           durationMs: true,
           createdAt: true,
-          errorMessage: true,
-          responseSnapshotJson: true,
+          errorMessage: isAdmin,
+          responseSnapshotJson: isAdmin,
+          requestSnapshotJson: isAdmin,
+          requestPayloadJson: isAdmin,
+          cost: true,
+          costStatus: true,
+          pricingSku: true,
+          unitPrice: true,
+          priceVersion: true,
+          callbackUrl: isAdmin,
+          workerJobId: isAdmin,
+          capacityRequeueCount: isAdmin,
           apiKey: {
             select: {
               id: true,
@@ -56,10 +67,17 @@ export async function GET(request: NextRequest) {
               keyPrefix: true,
             },
           },
+          webhookDeliveries: isAdmin
+            ? {
+                orderBy: { createdAt: 'desc' },
+                take: 3,
+              }
+            : false,
           _count: {
             select: {
               attempts: true,
               assets: true,
+              webhookDeliveries: true,
             },
           },
         },

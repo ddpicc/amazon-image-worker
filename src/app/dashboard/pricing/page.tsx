@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 
 interface PriceRow {
   id: string
-  size: string
+  sku: string
+  label: string
   price: number
+  version: number
   enabled: boolean
 }
 
@@ -66,7 +68,7 @@ export default function PricingPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Pricing</h2>
-        <p className="text-sm text-gray-500 mt-1">Manage per-size pricing for image generation</p>
+        <p className="text-sm text-gray-500 mt-1">Manage SKU pricing for image generation and editing</p>
       </div>
 
       {message && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">{message}</div>}
@@ -76,15 +78,18 @@ export default function PricingPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-gray-700">
             <tr>
-              <th className="px-4 py-3 text-left font-medium">Size</th>
+              <th className="px-4 py-3 text-left font-medium">SKU</th>
+              <th className="px-4 py-3 text-left font-medium">Label</th>
               <th className="px-4 py-3 text-left font-medium">Price (USD)</th>
+              <th className="px-4 py-3 text-left font-medium">Version</th>
               <th className="px-4 py-3 text-left font-medium">Enabled</th>
             </tr>
           </thead>
           <tbody>
             {prices.map((row, index) => (
               <tr key={row.id} className="border-t border-gray-100">
-                <td className="px-4 py-3 font-medium text-gray-900">{row.size}</td>
+                <td className="px-4 py-3 font-mono text-sm font-medium text-gray-900">{row.sku}</td>
+                <td className="px-4 py-3 text-gray-700">{row.label}</td>
                 <td className="px-4 py-3">
                   <input
                     type="number"
@@ -98,6 +103,7 @@ export default function PricingPage() {
                     className="w-40 px-3 py-2 border border-gray-300 rounded-md"
                   />
                 </td>
+                <td className="px-4 py-3 text-gray-700">v{row.version}</td>
                 <td className="px-4 py-3">
                   <label className="inline-flex items-center gap-2">
                     <input

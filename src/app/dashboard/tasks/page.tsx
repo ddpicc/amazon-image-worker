@@ -16,12 +16,24 @@ interface Task {
   createdAt: string
   errorMessage: string | null
   responseSnapshotJson?: ResponseSnapshot | null
+  requestSnapshotJson?: unknown
+  requestPayloadJson?: unknown
+  cost?: number | null
+  costStatus?: string | null
+  pricingSku?: string | null
+  unitPrice?: number | null
+  priceVersion?: number | null
+  callbackUrl?: string | null
+  workerJobId?: string | null
+  capacityRequeueCount?: number
   apiKey?: { id: string; name: string; keyPrefix: string } | null
   attempts?: TaskAttempt[]
   assets?: TaskAsset[]
+  webhookDeliveries?: WebhookDelivery[]
   _count?: {
     attempts: number
     assets: number
+    webhookDeliveries?: number
   }
 }
 
@@ -46,6 +58,19 @@ interface TaskAsset {
   mimeType: string
   bytes: number
   createdAt: string
+}
+
+interface WebhookDelivery {
+  id: string
+  callbackUrl: string
+  attemptIndex: number
+  status: 'STARTED' | 'SUCCEEDED' | 'FAILED'
+  httpStatus: number | null
+  durationMs: number | null
+  errorMessage: string | null
+  responseBodySample: string | null
+  createdAt: string
+  completedAt: string | null
 }
 
 interface TasksResponse {
@@ -312,6 +337,7 @@ export default function TasksPage() {
                   expanded={expandedId === task.id}
                   detailsLoaded={!!details[task.id]}
                   detailLoading={detailLoadingId === task.id}
+                  showAdminDebug={user?.role === 'ADMIN'}
                   onToggle={() => handleToggle(task)}
                   onRetry={handleRetry}
                   retrying={false}
@@ -345,6 +371,7 @@ function TaskRow({
   onToggle,
   onRetry,
   retrying,
+  showAdminDebug,
 }: {
   task: Task
   summaryTask: Task
@@ -355,9 +382,11 @@ function TaskRow({
   onToggle: () => void
   onRetry: (t: Task) => void
   retrying: boolean
+  showAdminDebug: boolean
 }) {
   const attempts = task.attempts ?? []
   const assets = task.assets ?? []
+  const webhookDeliveries = task.webhookDeliveries ?? []
 
   return (
     <>
@@ -419,6 +448,61 @@ function TaskRow({
                         </div>
                         {attempt.errorMessage && <p className="mt-1 text-xs text-red-600">{attempt.errorMessage}</p>}
                         {attempt.errorType && <p className="mt-0.5 text-xs text-orange-600">Type: {attempt.errorType}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {showAdminDebug && (
+                <div>
+                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Admin Debug</h4>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded border border-gray-200 bg-white px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Cost</p>
+                      <p className="mt-1 text-sm font-medium text-gray-900">{task.cost != null ? `$${Number(task.cost).toFixed(4)}` : '-'} {task.costStatus ? `(${task.costStatus})` : ''}</p>
+                    </div>
+                    <div className="rounded border border-gray-200 bg-white px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Pricing</p>
+                      <p className="mt-1 text-sm font-medium text-gray-900">
+                        {task.pricingSku || '-'} {task.unitPrice != null ? `$${Number(task.unitPrice).toFixed(4)}` : ''} {task.priceVersion ? `v${task.priceVersion}` : ''}
+                      </p>
+                    </div>
+                    <div className="rounded border border-gray-200 bg-white px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Worker Job</p>
+                      <p className="mt-1 text-sm font-mono text-gray-900 break-all">{task.workerJobId || '-'}</p>
+                    </div>
+                    <div className="rounded border border-gray-200 bg-white px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Requeues</p>
+                      <p className="mt-1 text-sm font-medium text-gray-900">{task.capacityRequeueCount ?? 0}</p>
+                    </div>
+                    <div className="rounded border border-gray-200 bg-white px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Webhooks</p>
+                      <p className="mt-1 text-sm font-medium text-gray-900">{task._count?.webhookDeliveries ?? webhookDeliveries.length}</p>
+                    </div>
+                  </div>
+                  {task.callbackUrl && (
+                    <p className="mt-2 rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 break-all">Callback: {task.callbackUrl}</p>
+                  )}
+                </div>
+              )}
+
+              {showAdminDebug && webhookDeliveries.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Webhook Deliveries ({webhookDeliveries.length})</h4>
+                  <div className="space-y-2">
+                    {webhookDeliveries.map((delivery) => (
+                      <div key={delivery.id} className="bg-white rounded border border-gray-200 p-3 text-sm">
+                        <div className="flex flex-wrap items-center gap-3 text-gray-600">
+                          <span className="font-medium">#{delivery.attemptIndex}</span>
+                          <StatusBadge status={delivery.status === 'STARTED' ? 'PROCESSING' : delivery.status === 'SUCCEEDED' ? 'SUCCEEDED' : 'FAILED'} />
+                          <span>HTTP {delivery.httpStatus ?? '-'}</span>
+                          <span className="text-xs text-gray-400">{formatDuration(delivery.durationMs)}</span>
+                          <span className="text-xs text-gray-400">{formatDate(delivery.createdAt)}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500 break-all">{delivery.callbackUrl}</p>
+                        {delivery.errorMessage && <p className="mt-1 text-xs text-red-600">{delivery.errorMessage}</p>}
+                        {delivery.responseBodySample && <pre className="mt-2 max-h-24 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-600 whitespace-pre-wrap">{delivery.responseBodySample}</pre>}
                       </div>
                     ))}
                   </div>

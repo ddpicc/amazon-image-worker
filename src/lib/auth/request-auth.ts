@@ -11,26 +11,6 @@ export interface RequestAuthContext {
 }
 
 export async function resolveRequestAuth(request: NextRequest): Promise<RequestAuthContext | null> {
-  const headerUserId = request.headers.get('x-user-id')
-  const headerUserRole = request.headers.get('x-user-role')
-  const headerAuthType = request.headers.get('x-auth-type')
-  const headerApiKeyId = request.headers.get('x-api-key-id')
-  const headerSessionId = request.headers.get('x-session-id')
-
-  if (
-    headerUserId &&
-    headerUserRole &&
-    (headerAuthType === 'session' || headerAuthType === 'api-key')
-  ) {
-    return {
-      authType: headerAuthType,
-      userId: headerUserId,
-      role: headerUserRole === 'ADMIN' ? 'ADMIN' : 'USER',
-      apiKeyId: headerApiKeyId ?? undefined,
-      sessionId: headerSessionId ?? undefined,
-    }
-  }
-
   const authHeader = request.headers.get('authorization')
   if (authHeader?.startsWith('Bearer ')) {
     const apiKey = await validateApiKey(authHeader.slice('Bearer '.length))

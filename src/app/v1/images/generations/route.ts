@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { checkAndIncrementQuota } from '@/lib/auth/quota-service'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
-import { createQueuedImageGenerationRequest } from '@/lib/image-generation-service'
-import { enqueueImageGeneration } from '@/lib/image-generation-worker-queue'
-import { checkBalance, deductBalance } from '@/lib/billing/billing-service'
-import { resolvePublicImageSize } from '@/lib/billing/price-service'
-import { lookupSizePrice } from '@/lib/billing/billing-service'
+import { lookupPricingForSize, resolvePublicImageSize } from '@/lib/billing/price-service'
 import type { RenderSize } from '@/lib/image-options'
+import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
+import { SubmitImageTaskError, submitBillableImageTask } from '@/lib/image-task-submission'
 
 const ALLOWED_MODELS = new Set(['gpt-image-2', 'agnes-image-2.1-flash'])
 const ALLOWED_QUALITIES = new Set(['low', 'medium', 'high'])
@@ -22,6 +19,13 @@ function isHttpsUrl(value: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    const ipRateLimitResponse = await enforceRateLimit(request, {
+      key: `images:generations:ip:${getClientIp(request)}`,
+      limit: 120,
+      windowSeconds: 60,
+    })
+    if (ipRateLimitResponse) return ipRateLimitResponse
+
     const result = await requireRequestAuth(request)
     if ('error' in result) {
       return result.error
@@ -31,6 +35,13 @@ export async function POST(request: NextRequest) {
     if (auth.authType !== 'api-key' || !auth.apiKeyId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const apiKeyRateLimitResponse = await enforceRateLimit(request, {
+      key: `images:generations:key:${auth.apiKeyId}`,
+      limit: 60,
+      windowSeconds: 60,
+    })
+    if (apiKeyRateLimitResponse) return apiKeyRateLimitResponse
 
     const body = await request.json()
     const {
@@ -111,37 +122,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const quotaResult = await checkAndIncrementQuota(auth.apiKeyId)
-    if (!quotaResult.allowed) {
-      return NextResponse.json(
-        { error: quotaResult.reason || 'Quota exceeded' },
-        { status: 429 },
-      )
-    }
-
-    const unitPrice = await lookupSizePrice(resolvedSize)
-    if (unitPrice === null) {
+    const pricing = await lookupPricingForSize(resolvedSize)
+    if (pricing === null) {
       return NextResponse.json(
         { error: `No pricing configured for size ${resolvedSize}` },
         { status: 400 },
       )
     }
 
-    const totalCost = unitPrice * n
-    const balanceCheck = await checkBalance(auth.userId, totalCost)
-    if (!balanceCheck.sufficient) {
-      return NextResponse.json(
-        {
-          error: 'Insufficient balance',
-          code: 'insufficient_balance',
-          balance: balanceCheck.currentBalance,
-          required: totalCost,
-        },
-        { status: 402 },
-      )
-    }
-
-    const submitResult = await createQueuedImageGenerationRequest({
+    const totalCost = pricing.unitPrice * n
+    const submitResult = await submitBillableImageTask({
+      userId: auth.userId,
       apiKeyId: auth.apiKeyId,
       model,
       prompt: prompt.trim(),
@@ -159,15 +150,12 @@ export async function POST(request: NextRequest) {
         n,
       },
       callbackUrl: callback_url ?? null,
-    })
-
-    await deductBalance(
-      auth.userId,
       totalCost,
-      submitResult.requestId,
-    )
-
-    await enqueueImageGeneration({ requestId: submitResult.requestId })
+      pricingSku: pricing.sku,
+      unitPrice: pricing.unitPrice,
+      priceVersion: pricing.priceVersion,
+      idempotencyKey: request.headers.get('idempotency-key'),
+    })
 
     return NextResponse.json(
       {
@@ -181,14 +169,27 @@ export async function POST(request: NextRequest) {
           type: 'image',
         },
         usage: {
-          unit_price: unitPrice,
-          total_cost: totalCost,
+          sku: submitResult.pricingSku,
+          unit_price: submitResult.unitPrice,
+          price_version: submitResult.priceVersion,
+          total_cost: submitResult.totalCost,
           currency: 'USD',
         },
+        idempotent: submitResult.idempotent,
       },
       { status: 202 },
     )
   } catch (error) {
+    if (error instanceof SubmitImageTaskError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.code,
+          ...(error.details ?? {}),
+        },
+        { status: error.status },
+      )
+    }
     const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json({ error: message }, { status: 500 })
   }

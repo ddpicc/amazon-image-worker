@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createApiKey, listAllApiKeysForAdmin, listApiKeysByUser } from '@/lib/auth/api-key-service'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
+import { enforceRateLimit } from '@/lib/rate-limit'
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,6 +34,13 @@ export async function POST(request: NextRequest) {
     if (auth.role === 'ADMIN') {
       return NextResponse.json({ error: 'Admins do not create personal API keys' }, { status: 403 })
     }
+
+    const rateLimitResponse = await enforceRateLimit(request, {
+      key: `api-keys:create:${auth.userId}`,
+      limit: 10,
+      windowSeconds: 60 * 60,
+    })
+    if (rateLimitResponse) return rateLimitResponse
 
     const body = await request.json()
     const { name } = body as {

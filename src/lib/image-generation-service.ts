@@ -12,6 +12,7 @@ import { checkCircuitBreaker } from './providers/circuit-breaker'
 import { prisma } from './db/prisma'
 import { getObjectStorageBackend, uploadBufferToObjectStorage } from './object-storage'
 import { dispatchImageTaskCallback } from './image-task-callback'
+import { loadStoredReferenceImage } from './remote-reference-images'
 
 export interface GenerateImageInput {
   apiKeyId: string
@@ -943,17 +944,9 @@ export async function executeQueuedImageGeneration(requestId: string) {
     },
   })
 
-  const referenceImages = await Promise.all((payload.referenceImages || []).slice(0, 16).map(async (image) => {
-    const response = await fetch(image.url)
-    if (!response.ok) {
-      throw new Error(`Failed to load saved reference image: ${response.status}`)
-    }
-    const arrayBuffer = await response.arrayBuffer()
-    return {
-      data: Buffer.from(arrayBuffer).toString('base64'),
-      mediaType: response.headers.get('content-type') || image.mimeType || 'image/jpeg',
-    }
-  }))
+  const referenceImages = await Promise.all(
+    (payload.referenceImages || []).slice(0, 16).map(loadStoredReferenceImage),
+  )
 
   try {
     if (!request.operationId) {

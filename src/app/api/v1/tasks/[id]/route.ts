@@ -14,8 +14,9 @@ export async function GET(
     const { auth } = result
 
     const { id } = await params
+    const isAdmin = auth.role === 'ADMIN'
 
-    const where = auth.role === 'ADMIN'
+    const where = isAdmin
       ? { id }
       : auth.authType === 'api-key' && auth.apiKeyId
         ? { id, apiKeyId: auth.apiKeyId }
@@ -28,7 +29,45 @@ export async function GET(
 
     const task = await prisma.imageGenerationRequest.findFirst({
       where,
-      include: {
+      select: {
+        id: true,
+        apiKeyId: true,
+        operationId: true,
+        selectedProviderId: isAdmin,
+        selectedProviderName: true,
+        selectedProviderBaseUrl: isAdmin,
+        selectedProviderModel: isAdmin,
+        attemptCount: true,
+        finalUpstreamApiKind: true,
+        status: true,
+        statusMessage: true,
+        durationMs: true,
+        prompt: true,
+        finalPrompt: isAdmin,
+        revisedPrompt: true,
+        imageType: true,
+        aspectRatio: true,
+        size: true,
+        referenceImageCount: true,
+        referenceImagesJson: isAdmin,
+        requestPayloadJson: isAdmin,
+        requestSnapshotJson: isAdmin,
+        responseSnapshotJson: isAdmin,
+        errorMessage: isAdmin,
+        callbackUrl: isAdmin,
+        metadata: isAdmin,
+        cost: true,
+        costStatus: true,
+        pricingSku: true,
+        unitPrice: true,
+        priceVersion: true,
+        capacityRequeueCount: isAdmin,
+        workerJobId: isAdmin,
+        queuedAt: true,
+        startedAt: true,
+        completedAt: true,
+        createdAt: true,
+        updatedAt: true,
         apiKey: {
           select: {
             id: true,
@@ -36,12 +75,19 @@ export async function GET(
             keyPrefix: true,
           },
         },
-        attempts: {
-          orderBy: { attemptIndex: 'asc' },
-        },
+        attempts: isAdmin
+          ? {
+              orderBy: { attemptIndex: 'asc' },
+            }
+          : false,
         assets: {
           orderBy: { createdAt: 'asc' },
         },
+        webhookDeliveries: isAdmin
+          ? {
+              orderBy: [{ attemptIndex: 'asc' }, { createdAt: 'asc' }],
+            }
+          : false,
       },
     })
 

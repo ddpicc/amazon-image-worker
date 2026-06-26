@@ -8,22 +8,6 @@ function decimalLikeToNumber(value: Prisma.Decimal | string | number | bigint | 
 }
 
 // ============================================================
-// Price Lookup
-// ============================================================
-
-/**
- * Look up the price for a given size. Returns the price or null if
- * no enabled SizePrice row exists.
- */
-export async function lookupSizePrice(size: string): Promise<number | null> {
-  const row = await prisma.sizePrice.findUnique({
-    where: { size },
-  })
-  if (!row || !row.enabled) return null
-  return Number(row.price)
-}
-
-// ============================================================
 // Balance Check
 // ============================================================
 
@@ -206,6 +190,9 @@ export interface UsageRecord {
   id: string
   prompt: string
   size: string | null
+  pricingSku: string | null
+  unitPrice: number | null
+  priceVersion: number | null
   cost: number | null
   costStatus: string | null
   status: string
@@ -267,6 +254,9 @@ export async function getUsageHistory(params: {
         id: true,
         prompt: true,
         size: true,
+        pricingSku: true,
+        unitPrice: true,
+        priceVersion: true,
         cost: true,
         costStatus: true,
         status: true,
@@ -290,6 +280,9 @@ export async function getUsageHistory(params: {
       id: r.id,
       prompt: r.prompt,
       size: r.size,
+      pricingSku: r.pricingSku,
+      unitPrice: r.unitPrice !== null ? Number(r.unitPrice) : null,
+      priceVersion: r.priceVersion,
       cost: r.cost !== null ? Number(r.cost) : null,
       costStatus: r.costStatus,
       status: r.status,
