@@ -1,7 +1,8 @@
-import { ImageProvider } from '@prisma/client'
+import { ImageProvider, Prisma } from '@prisma/client'
 import { prisma } from '../db/prisma'
 import { encryptSecret } from '../crypto'
 import { scoreProviders, ScoredProvider, ProviderRollingStats, DEFAULT_WEIGHTS, ScoringWeights } from './provider-scoring'
+import { getCompatibleImageProviderModels } from '../image-models'
 
 // --- Per-Provider Concurrency Tracking ---
 
@@ -47,10 +48,11 @@ function normalizeProviderBaseUrl(baseUrl: string): string {
 export async function selectProviders(model?: string | null, weights?: ScoringWeights): Promise<ScoredProvider[]> {
   const now = new Date()
 
-  // Fetch all enabled providers, optionally filtered by model
-  const where: { enabled: boolean; model?: string } = { enabled: true }
-  if (model) {
-    where.model = model
+  // Fetch all enabled providers, optionally filtered by compatible models
+  const where: Prisma.ImageProviderWhereInput = { enabled: true }
+  const compatibleModels = getCompatibleImageProviderModels(model)
+  if (compatibleModels && compatibleModels.length > 0) {
+    where.model = { in: compatibleModels }
   }
 
   const providers = await prisma.imageProvider.findMany({

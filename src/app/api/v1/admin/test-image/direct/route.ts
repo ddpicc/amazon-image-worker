@@ -3,7 +3,16 @@ import { requireAdminRequest } from '@/lib/auth/request-auth'
 import { testImageProviderDirect } from '@/lib/direct-provider-test'
 import type { RenderSize } from '@/lib/image-options'
 
-const ALLOWED_SIZES = new Set<RenderSize>(['1024x1024', '1536x1024', '1024x1536'])
+const ALLOWED_SIZES = new Set<RenderSize>([
+  '1024x1024',
+  '2048x2048',
+  '1536x1024',
+  '2048x1365',
+  '1024x1536',
+  '1365x2048',
+  '1536x960',
+  '1024x640',
+])
 
 export async function POST(request: NextRequest) {
   try {

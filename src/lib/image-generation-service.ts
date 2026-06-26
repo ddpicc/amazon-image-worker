@@ -9,6 +9,7 @@ import { selectProviders, markProviderSuccess, markProviderFailure, acquireProvi
 import { classifyError } from './providers/error-classifier'
 import { applyCooldown, clearCooldown } from './providers/cooldown'
 import { checkCircuitBreaker } from './providers/circuit-breaker'
+import { normalizeImageModel } from './image-models'
 import { prisma } from './db/prisma'
 import { getObjectStorageBackend, uploadBufferToObjectStorage } from './object-storage'
 import { dispatchImageTaskCallback } from './image-task-callback'
@@ -90,7 +91,7 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
 }
 
 function isAgnesImageModel(model: string): boolean {
-  return model === 'agnes-image-2.1-flash'
+  return normalizeImageModel(model) === 'agnes-image-2.1-flash'
 }
 
 function toDataUri(referenceImage: { data: string; mediaType: string }): string {

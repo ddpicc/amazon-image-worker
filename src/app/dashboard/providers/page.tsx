@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchCurrentUser } from '@/lib/dashboard/auth'
+import { groupImageProviderModel } from '@/lib/image-models'
 import { Plus, Pencil, ArrowUp, ArrowDown, Power, PowerOff, X, Eye, Copy, Check, Trash2, RotateCcw } from 'lucide-react'
 
 interface Provider {
@@ -61,6 +62,49 @@ const emptyAdd: AddFormData = {
 function successRate(p: Provider): string {
   if (p.totalAttempts === 0) return 'N/A'
   return ((p.successfulAttempts / p.totalAttempts) * 100).toFixed(1) + '%'
+}
+
+const MODEL_ORDER = ['gpt-image-2', 'agnes-image-2.1-flash']
+
+function groupProvidersByModel(providers: Provider[]) {
+  const groups = providers.reduce<Record<string, Provider[]>>((acc, provider) => {
+    const modelGroup = groupImageProviderModel(provider.model)
+    if (!acc[modelGroup]) acc[modelGroup] = []
+    acc[modelGroup].push(provider)
+    return acc
+  }, {})
+
+  return Object.entries(groups).sort(([modelA], [modelB]) => {
+    const indexA = MODEL_ORDER.indexOf(modelA)
+    const indexB = MODEL_ORDER.indexOf(modelB)
+
+    if (indexA !== -1 || indexB !== -1) {
+      const normalizedA = indexA === -1 ? MODEL_ORDER.length : indexA
+      const normalizedB = indexB === -1 ? MODEL_ORDER.length : indexB
+      return normalizedA - normalizedB
+    }
+
+    return modelA.localeCompare(modelB)
+  })
+}
+
+function getGroupLabel(model: string, modelProviders: Provider[]) {
+  const actualModels = [...new Set(modelProviders.map((provider) => provider.model))]
+  const aliases = actualModels.filter((value) => value !== model)
+
+  if (model === 'gpt-image-2') {
+    return {
+      title: 'gpt-image-2',
+      subtitle: aliases.length > 0
+        ? `Providers: ${modelProviders.length} · Aliases: ${aliases.join(', ')}`
+        : `Providers: ${modelProviders.length}`,
+    }
+  }
+
+  return {
+    title: model,
+    subtitle: `Providers: ${modelProviders.length}`,
+  }
 }
 
 function StatusBadge({ provider }: { provider: Provider }) {
@@ -291,54 +335,73 @@ export default function ProvidersPage() {
 
       {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
 
-      <div className="rounded-lg shadow-sm border border-gray-200 bg-white overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-left text-gray-500">
-                <th className="px-4 py-2.5 font-medium">Name</th>
-                <th className="px-4 py-2.5 font-medium">Vendor</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Priority</th>
-                <th className="px-4 py-2.5 font-medium">Max Concurrent</th>
-                <th className="px-4 py-2.5 font-medium">Success Rate</th>
-                <th className="px-4 py-2.5 font-medium">Avg Latency</th>
-                <th className="px-4 py-2.5 font-medium">Cost/Req</th>
-                <th className="px-4 py-2.5 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {providers.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">No providers configured</td></tr>
-              ) : providers.map((p, i) => (
-                <tr key={p.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}>
-                  <td className="px-4 py-2.5 font-medium text-gray-900">{p.name}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{p.vendor}</td>
-                  <td className="px-4 py-2.5"><StatusBadge provider={p} /></td>
-                  <td className="px-4 py-2.5 text-gray-600">{p.priority}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{p.maxConcurrent}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{successRate(p)}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{p.avgDurationMs > 0 ? `${p.avgDurationMs}ms` : 'N/A'}</td>
-                  <td className="px-4 py-2.5 text-gray-600">${p.estimatedCostPerReq.toFixed(4)}</td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => toggleEnabled(p)} disabled={actionLoading === p.id} title={p.enabled ? 'Disable' : 'Enable'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50">{p.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}</button>
-                      {p.circuitBreakerTrippedAt && (
-                        <button onClick={() => resetBreaker(p)} disabled={actionLoading === p.id} title="Reset breaker" className="p-1 rounded hover:bg-emerald-50 text-gray-500 hover:text-emerald-700 disabled:opacity-50"><RotateCcw className="w-3.5 h-3.5" /></button>
-                      )}
-                      <button onClick={() => movePriority(p, 'up')} disabled={actionLoading === p.id} title="Move up" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowUp className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => movePriority(p, 'down')} disabled={actionLoading === p.id} title="Move down" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowDown className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => openEdit(p)} title="Edit" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"><Pencil className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => showKey(p)} disabled={actionLoading === p.id} title="Show API Key" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><Eye className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => deleteProvider(p)} disabled={actionLoading === p.id} title="Delete Provider" className="p-1 rounded hover:bg-red-50 text-gray-500 hover:text-red-700 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {providers.length === 0 ? (
+        <div className="rounded-lg shadow-sm border border-gray-200 bg-white px-4 py-8 text-center text-gray-400">No providers configured</div>
+      ) : (
+        <div className="space-y-6">
+          {groupProvidersByModel(providers).map(([model, modelProviders]) => (
+            <div key={model} className="rounded-lg shadow-sm border border-gray-200 bg-white overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+                <div>
+                  {(() => {
+                    const label = getGroupLabel(model, modelProviders)
+                    return (
+                      <>
+                        <h3 className="text-sm font-semibold text-gray-900">{label.title}</h3>
+                        <p className="text-xs text-gray-500 mt-0.5">{label.subtitle}</p>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-gray-500">
+                      <th className="px-4 py-2.5 font-medium">Name</th>
+                      <th className="px-4 py-2.5 font-medium">Vendor</th>
+                      <th className="px-4 py-2.5 font-medium">Status</th>
+                      <th className="px-4 py-2.5 font-medium">Priority</th>
+                      <th className="px-4 py-2.5 font-medium">Max Concurrent</th>
+                      <th className="px-4 py-2.5 font-medium">Success Rate</th>
+                      <th className="px-4 py-2.5 font-medium">Avg Latency</th>
+                      <th className="px-4 py-2.5 font-medium">Cost/Req</th>
+                      <th className="px-4 py-2.5 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modelProviders.map((p, i) => (
+                      <tr key={p.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}>
+                        <td className="px-4 py-2.5 font-medium text-gray-900">{p.name}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{p.vendor}</td>
+                        <td className="px-4 py-2.5"><StatusBadge provider={p} /></td>
+                        <td className="px-4 py-2.5 text-gray-600">{p.priority}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{p.maxConcurrent}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{successRate(p)}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{p.avgDurationMs > 0 ? `${p.avgDurationMs}ms` : 'N/A'}</td>
+                        <td className="px-4 py-2.5 text-gray-600">${p.estimatedCostPerReq.toFixed(4)}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => toggleEnabled(p)} disabled={actionLoading === p.id} title={p.enabled ? 'Disable' : 'Enable'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50">{p.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}</button>
+                            {p.circuitBreakerTrippedAt && (
+                              <button onClick={() => resetBreaker(p)} disabled={actionLoading === p.id} title="Reset breaker" className="p-1 rounded hover:bg-emerald-50 text-gray-500 hover:text-emerald-700 disabled:opacity-50"><RotateCcw className="w-3.5 h-3.5" /></button>
+                            )}
+                            <button onClick={() => movePriority(p, 'up')} disabled={actionLoading === p.id} title="Move up" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowUp className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => movePriority(p, 'down')} disabled={actionLoading === p.id} title="Move down" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowDown className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => openEdit(p)} title="Edit" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => showKey(p)} disabled={actionLoading === p.id} title="Show API Key" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><Eye className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => deleteProvider(p)} disabled={actionLoading === p.id} title="Delete Provider" className="p-1 rounded hover:bg-red-50 text-gray-500 hover:text-red-700 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
 
       {showAddModal && (
         <Modal title="Add Provider" onClose={() => setShowAddModal(false)}>

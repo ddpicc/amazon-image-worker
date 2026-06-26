@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { decryptSecret } from './crypto'
 import { getProvider } from './providers/provider-service'
 import type { RenderSize } from './image-options'
+import { normalizeImageModel } from './image-models'
 
 const PROVIDER_TIMEOUT_MS = 240_000
 
@@ -29,7 +30,7 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
 }
 
 function isAgnesImageModel(model: string): boolean {
-  return model === 'agnes-image-2.1-flash'
+  return normalizeImageModel(model) === 'agnes-image-2.1-flash'
 }
 
 function buildImageGenerateParams(params: { model: string; prompt: string; size: RenderSize }) {
