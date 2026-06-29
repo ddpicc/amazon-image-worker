@@ -5,8 +5,10 @@ import {
   ensureDefaultPricingSkus,
   listPricingSkus,
 } from '@/lib/billing/price-service'
+import { fenToYuan, yuanToFen } from '@/lib/money'
 
 const ALLOWED_PRICING_SKUS = new Set(['image_1k', 'image_2k'])
+type PricingInputRow = { sku?: string; price?: number; enabled?: boolean }
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,7 +25,8 @@ export async function GET(request: NextRequest) {
         id: row.id,
         sku: row.sku,
         label: row.label,
-        price: Number(row.price),
+        priceFen: row.priceFen,
+        price: fenToYuan(row.priceFen),
         version: row.version,
         enabled: row.enabled,
         updatedBy: row.updatedBy,
@@ -45,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const rows = Array.isArray(body?.prices) ? body.prices : []
+    const rows: PricingInputRow[] = Array.isArray(body?.prices) ? body.prices : []
     if (rows.length === 0) {
       return NextResponse.json({ error: 'prices is required' }, { status: 400 })
     }
@@ -65,14 +68,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const updated = await batchSetPricingSkus(rows, result.auth.userId)
+    const updated = await batchSetPricingSkus(
+      rows.map((row) => ({
+        sku: row.sku!,
+        priceFen: yuanToFen(row.price!),
+        enabled: row.enabled,
+      })),
+      result.auth.userId,
+    )
 
     return NextResponse.json({
       prices: updated.map((row) => ({
         id: row.id,
         sku: row.sku,
         label: row.label,
-        price: Number(row.price),
+        priceFen: row.priceFen,
+        price: fenToYuan(row.priceFen),
         version: row.version,
         enabled: row.enabled,
         updatedBy: row.updatedBy,

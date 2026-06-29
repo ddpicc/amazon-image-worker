@@ -36,9 +36,9 @@ const callbackExample = `{
     "type": "image"
   },
   "usage": {
-    "cost": 0.04,
+    "cost": 0.30,
     "cost_status": "CHARGED",
-    "currency": "USD"
+    "currency": "CNY"
   },
   "data": [
     {

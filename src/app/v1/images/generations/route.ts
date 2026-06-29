@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
 import { lookupPricingForSize, resolvePublicImageSize } from '@/lib/billing/price-service'
+import { fenToYuan } from '@/lib/money'
 import type { RenderSize } from '@/lib/image-options'
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
 import { SubmitImageTaskError, submitBillableImageTask } from '@/lib/image-task-submission'
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const totalCost = pricing.unitPrice * n
+    const totalCostFen = pricing.unitPriceFen * n
     const submitResult = await submitBillableImageTask({
       userId: auth.userId,
       apiKeyId: auth.apiKeyId,
@@ -150,9 +151,9 @@ export async function POST(request: NextRequest) {
         n,
       },
       callbackUrl: callback_url ?? null,
-      totalCost,
+      totalCostFen,
       pricingSku: pricing.sku,
-      unitPrice: pricing.unitPrice,
+      unitPriceFen: pricing.unitPriceFen,
       priceVersion: pricing.priceVersion,
       idempotencyKey: request.headers.get('idempotency-key'),
     })
@@ -170,10 +171,12 @@ export async function POST(request: NextRequest) {
         },
         usage: {
           sku: submitResult.pricingSku,
-          unit_price: submitResult.unitPrice,
+          unit_price: fenToYuan(submitResult.unitPriceFen),
           price_version: submitResult.priceVersion,
-          total_cost: submitResult.totalCost,
-          currency: 'USD',
+          total_cost: fenToYuan(submitResult.totalCostFen),
+          unit_price_fen: submitResult.unitPriceFen,
+          total_cost_fen: submitResult.totalCostFen,
+          currency: 'CNY',
         },
         idempotent: submitResult.idempotent,
       },

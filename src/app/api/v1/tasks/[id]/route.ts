@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
+import { fenToYuan } from '@/lib/money'
 
 export async function GET(
   request: NextRequest,
@@ -56,10 +57,11 @@ export async function GET(
         errorMessage: isAdmin,
         callbackUrl: isAdmin,
         metadata: isAdmin,
-        cost: true,
+        costFen: true,
         costStatus: true,
         pricingSku: true,
-        unitPrice: true,
+        unitPriceFen: true,
+        currency: true,
         priceVersion: true,
         capacityRequeueCount: isAdmin,
         workerJobId: isAdmin,
@@ -95,7 +97,13 @@ export async function GET(
       return NextResponse.json({ error: 'Task not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ data: task })
+    return NextResponse.json({
+      data: {
+        ...task,
+        cost: task.costFen !== null ? fenToYuan(task.costFen) : null,
+        unitPrice: task.unitPriceFen !== null ? fenToYuan(task.unitPriceFen) : null,
+      },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json({ error: message }, { status: 500 })

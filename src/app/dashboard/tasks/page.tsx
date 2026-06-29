@@ -460,12 +460,12 @@ function TaskRow({
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded border border-gray-200 bg-white px-3 py-2">
                       <p className="text-[11px] uppercase tracking-wide text-gray-500">Cost</p>
-                      <p className="mt-1 text-sm font-medium text-gray-900">{task.cost != null ? `$${Number(task.cost).toFixed(4)}` : '-'} {task.costStatus ? `(${task.costStatus})` : ''}</p>
+                      <p className="mt-1 text-sm font-medium text-gray-900">{task.cost != null ? `¥${Number(task.cost).toFixed(2)}` : '-'} {task.costStatus ? `(${task.costStatus})` : ''}</p>
                     </div>
                     <div className="rounded border border-gray-200 bg-white px-3 py-2">
                       <p className="text-[11px] uppercase tracking-wide text-gray-500">Pricing</p>
                       <p className="mt-1 text-sm font-medium text-gray-900">
-                        {task.pricingSku || '-'} {task.unitPrice != null ? `$${Number(task.unitPrice).toFixed(4)}` : ''} {task.priceVersion ? `v${task.priceVersion}` : ''}
+                        {task.pricingSku || '-'} {task.unitPrice != null ? `¥${Number(task.unitPrice).toFixed(2)}` : ''} {task.priceVersion ? `v${task.priceVersion}` : ''}
                       </p>
                     </div>
                     <div className="rounded border border-gray-200 bg-white px-3 py-2">

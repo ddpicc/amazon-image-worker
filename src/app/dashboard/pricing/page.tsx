@@ -68,7 +68,7 @@ export default function PricingPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Pricing</h2>
-        <p className="text-sm text-gray-500 mt-1">Manage SKU pricing for image generation and editing</p>
+        <p className="text-sm text-gray-500 mt-1">Manage SKU pricing for image generation and editing in CNY</p>
       </div>
 
       {message && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">{message}</div>}
@@ -80,7 +80,7 @@ export default function PricingPage() {
             <tr>
               <th className="px-4 py-3 text-left font-medium">SKU</th>
               <th className="px-4 py-3 text-left font-medium">Label</th>
-              <th className="px-4 py-3 text-left font-medium">Price (USD)</th>
+              <th className="px-4 py-3 text-left font-medium">Price (CNY)</th>
               <th className="px-4 py-3 text-left font-medium">Version</th>
               <th className="px-4 py-3 text-left font-medium">Enabled</th>
             </tr>

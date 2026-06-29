@@ -1,11 +1,11 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db/prisma'
+import { fenToYuan } from '@/lib/money'
 
 export type PricingSkuCode = 'image_1k' | 'image_2k'
 
-const DEFAULT_SKU_PRICES: Array<{ sku: PricingSkuCode; label: string; price: number }> = [
-  { sku: 'image_1k', label: 'Image 1K', price: 0.04 },
-  { sku: 'image_2k', label: 'Image 2K', price: 0.08 },
+const DEFAULT_SKU_PRICES: Array<{ sku: PricingSkuCode; label: string; priceFen: number }> = [
+  { sku: 'image_1k', label: 'Image 1K', priceFen: 30 },
+  { sku: 'image_2k', label: 'Image 2K', priceFen: 60 },
 ]
 
 const RATIO_SIZE_MAP: Record<string, string> = {
@@ -61,7 +61,7 @@ export async function ensureDefaultPricingSkus(updatedBy?: string) {
         data: {
           sku: row.sku,
           label: row.label,
-          price: new Prisma.Decimal(row.price),
+          priceFen: row.priceFen,
           enabled: true,
           updatedBy: updatedBy || 'system',
         },
@@ -71,7 +71,7 @@ export async function ensureDefaultPricingSkus(updatedBy?: string) {
           pricingSkuId: sku.id,
           sku: sku.sku,
           version: sku.version,
-          price: sku.price,
+          priceFen: sku.priceFen,
           enabled: sku.enabled,
           updatedBy: sku.updatedBy,
         },
@@ -90,7 +90,7 @@ export async function listPricingSkus() {
 }
 
 export async function batchSetPricingSkus(
-  entries: Array<{ sku: string; price: number; enabled?: boolean }>,
+  entries: Array<{ sku: string; priceFen: number; enabled?: boolean }>,
   updatedBy: string,
 ) {
   await ensureDefaultPricingSkus(updatedBy)
@@ -105,14 +105,14 @@ export async function batchSetPricingSkus(
         throw new Error(`Unknown pricing sku: ${entry.sku}`)
       }
 
-      const priceChanged = Number(existing.price) !== entry.price
+      const priceChanged = existing.priceFen !== entry.priceFen
       const enabledChanged = entry.enabled !== undefined && existing.enabled !== entry.enabled
       const nextVersion = priceChanged || enabledChanged ? existing.version + 1 : existing.version
 
       const row = await tx.pricingSku.update({
         where: { sku: entry.sku },
         data: {
-          price: new Prisma.Decimal(entry.price),
+          priceFen: entry.priceFen,
           ...(entry.enabled !== undefined ? { enabled: entry.enabled } : {}),
           version: nextVersion,
           updatedBy,
@@ -125,7 +125,7 @@ export async function batchSetPricingSkus(
             pricingSkuId: row.id,
             sku: row.sku,
             version: row.version,
-            price: row.price,
+            priceFen: row.priceFen,
             enabled: row.enabled,
             updatedBy,
           },
@@ -140,6 +140,7 @@ export async function batchSetPricingSkus(
 
 export async function lookupPricingForSize(size: string): Promise<{
   sku: PricingSkuCode
+  unitPriceFen: number
   unitPrice: number
   priceVersion: number
 } | null> {
@@ -153,7 +154,8 @@ export async function lookupPricingForSize(size: string): Promise<{
 
   return {
     sku,
-    unitPrice: Number(row.price),
+    unitPriceFen: row.priceFen,
+    unitPrice: fenToYuan(row.priceFen),
     priceVersion: row.version,
   }
 }

@@ -103,7 +103,7 @@ export default function AccountPage() {
       <div className="rounded-lg shadow-sm border border-gray-200 bg-white p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Balance</h3>
         <p className="text-sm text-gray-500 mb-4">Your available prepaid balance for billed image generation</p>
-        <div className="text-3xl font-bold text-gray-900">${(user.balance ?? 0).toFixed(4)}</div>
+        <div className="text-3xl font-bold text-gray-900">¥{(user.balance ?? 0).toFixed(2)}</div>
       </div>
 
       <div className="rounded-lg shadow-sm border border-gray-200 bg-white p-6">

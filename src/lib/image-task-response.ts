@@ -105,11 +105,13 @@ export function buildImageTaskResponse(task: ImageTaskWithAssets) {
     revised_prompt: task.revisedPrompt ?? undefined,
     usage: {
       sku: task.pricingSku ?? undefined,
-      unit_price: task.unitPrice !== null ? Number(task.unitPrice) : undefined,
+      unit_price: task.unitPriceFen !== null ? task.unitPriceFen / 100 : undefined,
+      unit_price_fen: task.unitPriceFen ?? undefined,
       price_version: task.priceVersion ?? undefined,
-      cost: task.cost !== null ? Number(task.cost) : undefined,
+      cost: task.costFen !== null ? task.costFen / 100 : undefined,
+      cost_fen: task.costFen ?? undefined,
       cost_status: task.costStatus ?? undefined,
-      currency: 'USD',
+      currency: task.currency ?? 'CNY',
     },
   }
 }

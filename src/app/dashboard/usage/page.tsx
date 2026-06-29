@@ -133,11 +133,11 @@ export default function UsagePage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-gray-500">Charged</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">${totalCharged.toFixed(4)}</p>
+              <p className="mt-1 text-lg font-semibold text-gray-900">¥{totalCharged.toFixed(2)}</p>
             </div>
             <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-gray-500">Refunded</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">${totalRefunded.toFixed(4)}</p>
+              <p className="mt-1 text-lg font-semibold text-gray-900">¥{totalRefunded.toFixed(2)}</p>
             </div>
           </div>
         </div>
@@ -162,8 +162,8 @@ export default function UsagePage() {
                 <tr key={row.apiKeyId} className="border-t border-gray-100">
                   <td className="px-4 py-3 text-gray-900">{row.apiKeyName}</td>
                   <td className="px-4 py-3 text-gray-700">{row.count}</td>
-                  <td className="px-4 py-3 text-gray-900">${row.charged.toFixed(4)}</td>
-                  <td className="px-4 py-3 text-gray-700">${row.refunded.toFixed(4)}</td>
+                  <td className="px-4 py-3 text-gray-900">¥{row.charged.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-gray-700">¥{row.refunded.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
@@ -194,8 +194,8 @@ export default function UsagePage() {
                 <td className="px-4 py-3 text-gray-900 max-w-xl truncate" title={row.prompt}>{row.prompt}</td>
                 <td className="px-4 py-3 text-gray-700">{row.size || '-'}</td>
                 <td className="px-4 py-3 text-gray-700">{row.pricingSku || '-'}{row.priceVersion ? ` v${row.priceVersion}` : ''}</td>
-                <td className="px-4 py-3 text-gray-900">{row.unitPrice !== null ? `$${row.unitPrice.toFixed(4)}` : '-'}</td>
-                <td className="px-4 py-3 text-gray-900">{row.cost !== null ? `$${row.cost.toFixed(4)}` : '-'}</td>
+                <td className="px-4 py-3 text-gray-900">{row.unitPrice !== null ? `¥${row.unitPrice.toFixed(2)}` : '-'}</td>
+                <td className="px-4 py-3 text-gray-900">{row.cost !== null ? `¥${row.cost.toFixed(2)}` : '-'}</td>
                 <td className="px-4 py-3 text-gray-700">{row.costStatus || '-'}</td>
                 <td className="px-4 py-3 text-gray-700">{row.status}</td>
               </tr>

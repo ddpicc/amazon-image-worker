@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma'
 import { getCurrentSessionFromCookies } from '@/lib/auth/session'
 import { ensureBootstrapAdmin } from '@/lib/auth/bootstrap-admin'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
+import { fenToYuan } from '@/lib/money'
 
 export async function GET() {
   try {
@@ -20,7 +21,7 @@ export async function GET() {
         name: session.user.name,
         role: session.user.role,
         enabled: session.user.enabled,
-        balance: Number(session.user.balance ?? 0),
+        balance: fenToYuan(session.user.balanceFen ?? 0),
       },
     })
   } catch (error) {
@@ -78,11 +79,16 @@ export async function PUT(request: NextRequest) {
         name: true,
         role: true,
         enabled: true,
-        balance: true,
+        balanceFen: true,
       },
     })
 
-    return NextResponse.json({ user })
+    return NextResponse.json({
+      user: {
+        ...user,
+        balance: fenToYuan(user.balanceFen),
+      },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json({ error: message }, { status: 500 })

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { requireAdminRequest } from '@/lib/auth/request-auth'
-import { adjustBalance, getUserBalance } from '@/lib/billing/billing-service'
+import { adjustBalance, getUserBalance, parseYuanAmountToFen } from '@/lib/billing/billing-service'
 
 export async function GET(
   request: NextRequest,
@@ -69,7 +69,7 @@ export async function POST(
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const resultData = await adjustBalance(id, amount, result.auth.userId, reason)
+    const resultData = await adjustBalance(id, parseYuanAmountToFen(amount), result.auth.userId, reason)
 
     return NextResponse.json({
       success: true,

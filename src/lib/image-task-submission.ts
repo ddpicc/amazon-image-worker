@@ -46,18 +46,18 @@ interface SubmitBillableImageTaskParams {
   callbackUrl?: string | null
   idempotencyKey?: string | null
   pricingSku: string
-  unitPrice: number
+  unitPriceFen: number
   priceVersion: number
-  totalCost: number
+  totalCostFen: number
 }
 
 interface SubmitBillableImageTaskResult {
   requestId: string
   operationId: string
   pricingSku: string
-  unitPrice: number
+  unitPriceFen: number
   priceVersion: number
-  totalCost: number
+  totalCostFen: number
   idempotent: boolean
 }
 
@@ -131,7 +131,7 @@ async function compensateFailedEnqueue(params: {
   apiKeyId: string
   requestId: string
   operationId: string
-  totalCost: number
+  totalCostFen: number
   error: unknown
 }) {
   const message =
@@ -142,14 +142,14 @@ async function compensateFailedEnqueue(params: {
     operationId: params.operationId,
     apiKeyId: params.apiKeyId,
     userId: params.userId,
-    totalCost: params.totalCost,
+    totalCostFen: params.totalCostFen,
     error: params.error,
   })
 
   await decrementQuotaBestEffort(params.apiKeyId)
   await refundBalance(
     params.userId,
-    params.totalCost,
+    params.totalCostFen,
     params.requestId,
     'enqueue_failed',
   )
@@ -200,9 +200,9 @@ export async function submitBillableImageTask(
           select: {
             id: true,
             operationId: true,
-            cost: true,
+            costFen: true,
             pricingSku: true,
-            unitPrice: true,
+            unitPriceFen: true,
             priceVersion: true,
           },
         })
@@ -211,10 +211,8 @@ export async function submitBillableImageTask(
             requestId: existing.id,
             operationId: existing.operationId,
             pricingSku: existing.pricingSku ?? params.pricingSku,
-            unitPrice:
-              existing.unitPrice !== null ? Number(existing.unitPrice) : params.unitPrice,
-            totalCost:
-              existing.cost !== null ? Number(existing.cost) : params.totalCost,
+            unitPriceFen: existing.unitPriceFen ?? params.unitPriceFen,
+            totalCostFen: existing.costFen ?? params.totalCostFen,
             priceVersion: existing.priceVersion ?? params.priceVersion,
             idempotent: true,
           }
@@ -223,20 +221,19 @@ export async function submitBillableImageTask(
 
       await lockAndIncrementQuota(tx, params.apiKeyId)
 
-      const balanceRows = await tx.$queryRaw<
-        Array<{ balance: Prisma.Decimal | string | number | bigint }>
-      >`
-      SELECT balance FROM "User" WHERE id = ${params.userId} FOR UPDATE
-    `
-      const currentBalance = Number(balanceRows[0]?.balance ?? 0)
-      if (currentBalance < params.totalCost) {
+      const user = await tx.user.findUnique({
+        where: { id: params.userId },
+        select: { balanceFen: true },
+      })
+      const currentBalanceFen = user?.balanceFen ?? 0
+      if (currentBalanceFen < params.totalCostFen) {
         throw new SubmitImageTaskError(
           402,
           'insufficient_balance',
           'Insufficient balance',
           {
-            balance: currentBalance,
-            required: params.totalCost,
+            balance_fen: currentBalanceFen,
+            required_fen: params.totalCostFen,
           },
         )
       }
@@ -302,10 +299,11 @@ export async function submitBillableImageTask(
           ),
           status: 'QUEUED',
           statusMessage: '任务已提交，等待 worker 处理',
-          cost: new Prisma.Decimal(params.totalCost),
+          costFen: params.totalCostFen,
           costStatus: 'CHARGED',
           pricingSku: params.pricingSku,
-          unitPrice: new Prisma.Decimal(params.unitPrice),
+          unitPriceFen: params.unitPriceFen,
+          currency: 'CNY',
           priceVersion: params.priceVersion,
           queuedAt: new Date(),
         },
@@ -313,15 +311,18 @@ export async function submitBillableImageTask(
 
       await tx.user.update({
         where: { id: params.userId },
-        data: { balance: { decrement: new Prisma.Decimal(params.totalCost) } },
+        data: { balanceFen: { decrement: params.totalCostFen } },
       })
 
       await tx.balanceLog.create({
         data: {
           userId: params.userId,
-          amount: new Prisma.Decimal(-params.totalCost),
+          requestId: request.id,
+          amountFen: -params.totalCostFen,
+          balanceAfterFen: currentBalanceFen - params.totalCostFen,
           status: 'CHARGED',
           reason: `request_charged:${request.id}`,
+          idempotencyKey: `request-charge:${request.id}`,
         },
       })
 
@@ -329,9 +330,9 @@ export async function submitBillableImageTask(
         requestId: request.id,
         operationId: operation.id,
         pricingSku: params.pricingSku,
-        unitPrice: params.unitPrice,
+        unitPriceFen: params.unitPriceFen,
         priceVersion: params.priceVersion,
-        totalCost: params.totalCost,
+        totalCostFen: params.totalCostFen,
         idempotent: false,
       }
     })
@@ -349,9 +350,9 @@ export async function submitBillableImageTask(
         select: {
           id: true,
           operationId: true,
-          cost: true,
+          costFen: true,
           pricingSku: true,
-          unitPrice: true,
+          unitPriceFen: true,
           priceVersion: true,
         },
       })
@@ -360,10 +361,8 @@ export async function submitBillableImageTask(
           requestId: existing.id,
           operationId: existing.operationId,
           pricingSku: existing.pricingSku ?? params.pricingSku,
-          unitPrice:
-            existing.unitPrice !== null ? Number(existing.unitPrice) : params.unitPrice,
-          totalCost:
-            existing.cost !== null ? Number(existing.cost) : params.totalCost,
+          unitPriceFen: existing.unitPriceFen ?? params.unitPriceFen,
+          totalCostFen: existing.costFen ?? params.totalCostFen,
           priceVersion: existing.priceVersion ?? params.priceVersion,
           idempotent: true,
         }
@@ -399,7 +398,7 @@ export async function submitBillableImageTask(
       apiKeyId: params.apiKeyId,
       userId: params.userId,
       jobId: job.id?.toString() ?? null,
-      totalCost: result.totalCost,
+      totalCostFen: result.totalCostFen,
       pricingSku: result.pricingSku,
       priceVersion: result.priceVersion,
       size: params.size,
@@ -412,7 +411,7 @@ export async function submitBillableImageTask(
       apiKeyId: params.apiKeyId,
       requestId: result.requestId,
       operationId: result.operationId,
-      totalCost: result.totalCost,
+      totalCostFen: result.totalCostFen,
       error,
     })
     throw new SubmitImageTaskError(
@@ -492,18 +491,18 @@ export async function reconcileTimedOutBillableImageTasks(params?: {
       apiKeyId: request.apiKeyId,
       status: request.status,
       timeoutReason,
-      cost: request.cost !== null ? Number(request.cost) : null,
+      costFen: request.costFen,
       costStatus: request.costStatus,
     })
 
     if (
       request.apiKey.ownerUserId &&
-      request.cost !== null &&
+      request.costFen !== null &&
       request.costStatus === 'CHARGED'
     ) {
       await refundBalance(
         request.apiKey.ownerUserId,
-        Number(request.cost),
+        request.costFen,
         request.id,
         'task_timeout',
       )

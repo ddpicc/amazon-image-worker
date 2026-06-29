@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { requireAdminRequest } from '@/lib/auth/request-auth'
+import { fenToYuan } from '@/lib/money'
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
         name: user.name,
         role: user.role,
         enabled: user.enabled,
-        balance: Number(user.balance),
+        balance: fenToYuan(user.balanceFen),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         apiKeyCount: user._count.apiKeys,

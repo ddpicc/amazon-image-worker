@@ -173,7 +173,7 @@ async function main() {
             where: { id: requestId },
             select: {
               id: true,
-              cost: true,
+              costFen: true,
               costStatus: true,
               callbackUrl: true,
               apiKey: {
@@ -186,18 +186,18 @@ async function main() {
 
           if (
             request?.apiKey.ownerUserId &&
-            request.cost !== null &&
+            request.costFen !== null &&
             request.costStatus === 'CHARGED'
           ) {
             await refundBalance(
               request.apiKey.ownerUserId,
-              Number(request.cost),
+              request.costFen,
               request.id,
               'generation_failed',
             )
             logger.info('worker.job.refunded_failed_request', {
               requestId,
-              amount: Number(request.cost),
+              amountFen: request.costFen,
             })
           }
 

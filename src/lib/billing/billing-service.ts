@@ -1,118 +1,51 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db/prisma'
-
-function decimalLikeToNumber(value: Prisma.Decimal | string | number | bigint | null | undefined) {
-  if (value === null || value === undefined) return 0
-  if (typeof value === 'bigint') return Number(value)
-  return Number(value)
-}
-
-// ============================================================
-// Balance Check
-// ============================================================
+import { fenToYuan, yuanToFen } from '@/lib/money'
 
 export interface BalanceCheckResult {
   sufficient: boolean
-  currentBalance: number
+  currentBalanceFen: number
 }
 
-/**
- * Check whether a user has enough balance for the given cost.
- */
 export async function checkBalance(
   userId: string,
-  costUsd: number,
+  costFen: number,
 ): Promise<BalanceCheckResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { balance: true },
+    select: { balanceFen: true },
   })
+
   if (!user) {
-    return { sufficient: false, currentBalance: 0 }
+    return { sufficient: false, currentBalanceFen: 0 }
   }
-  const balance = Number(user.balance)
-  return { sufficient: balance >= costUsd, currentBalance: balance }
+
+  return {
+    sufficient: user.balanceFen >= costFen,
+    currentBalanceFen: user.balanceFen,
+  }
 }
 
-// ============================================================
-// Deduct Balance (on task creation)
-// ============================================================
-
-/**
- * Atomically deduct balance from a user and mark the request as charged.
- * Uses row-level lock (SELECT FOR UPDATE) to prevent concurrent over-draft.
- */
-export async function deductBalance(
-  userId: string,
-  costUsd: number,
-  requestId: string,
-): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<Array<{ balance: Prisma.Decimal | string | number | bigint }>>`
-      SELECT balance FROM "User" WHERE id = ${userId} FOR UPDATE
-    `
-    const currentBalance = decimalLikeToNumber(rows[0]?.balance)
-    if (currentBalance < costUsd) {
-      throw new Error(
-        `Insufficient balance: ${currentBalance} < ${costUsd}`,
-      )
-    }
-
-    await tx.user.update({
-      where: { id: userId },
-      data: { balance: { decrement: new Prisma.Decimal(costUsd) } },
-    })
-
-    await tx.imageGenerationRequest.update({
-      where: { id: requestId },
-      data: {
-        cost: new Prisma.Decimal(costUsd),
-        costStatus: 'CHARGED',
-      },
-    })
-
-    await tx.balanceLog.create({
-      data: {
-        userId,
-        amount: new Prisma.Decimal(-costUsd),
-        status: 'CHARGED',
-        reason: `request_charged:${requestId}`,
-      },
-    })
-  })
-}
-
-// ============================================================
-// Refund Balance (on task failure)
-// ============================================================
-
-/**
- * Refund the charged cost back to the user and mark the request as refunded.
- * Safe to call multiple times — checks costStatus first.
- */
 export async function refundBalance(
   userId: string,
-  costUsd: number,
+  costFen: number,
   requestId: string,
   reason?: string,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    // Verify the request is still in CHARGED state (idempotency guard)
     const request = await tx.imageGenerationRequest.findUnique({
       where: { id: requestId },
       select: { costStatus: true },
     })
     if (!request || request.costStatus !== 'CHARGED') {
-      return // Already refunded or never charged
+      return
     }
 
-    // Refund
-    await tx.user.update({
+    const updatedUser = await tx.user.update({
       where: { id: userId },
-      data: { balance: { increment: new Prisma.Decimal(costUsd) } },
+      data: { balanceFen: { increment: costFen } },
+      select: { balanceFen: true },
     })
 
-    // Mark request as refunded
     await tx.imageGenerationRequest.update({
       where: { id: requestId },
       data: {
@@ -121,45 +54,40 @@ export async function refundBalance(
       },
     })
 
-    // Log the refund in BalanceLog
     await tx.balanceLog.create({
       data: {
         userId,
-        amount: new Prisma.Decimal(costUsd),
+        requestId,
+        amountFen: costFen,
+        balanceAfterFen: updatedUser.balanceFen,
         status: 'REFUNDED',
         reason: reason || 'generation_failed',
+        idempotencyKey: `request-refund:${requestId}`,
       },
     })
   })
 }
 
-// ============================================================
-// Admin Balance Adjustment
-// ============================================================
-
-/**
- * Admin manually adjusts a user's balance (add or subtract).
- * Positive amount = credit (充值), negative = debit (扣减).
- */
 export async function adjustBalance(
   userId: string,
-  amount: number,
+  amountFen: number,
   adminUserId: string,
   reason?: string,
 ): Promise<{ newBalance: number }> {
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({
       where: { id: userId },
-      data: { balance: { increment: new Prisma.Decimal(amount) } },
-      select: { balance: true },
+      data: { balanceFen: { increment: amountFen } },
+      select: { balanceFen: true },
     })
 
     await tx.balanceLog.create({
       data: {
         userId,
-        amount: new Prisma.Decimal(amount),
-        status: amount >= 0 ? 'ADMIN_CREDIT' : 'ADMIN_DEBIT',
-        reason: reason || (amount >= 0 ? '管理员充值' : '管理员扣减'),
+        amountFen,
+        balanceAfterFen: updated.balanceFen,
+        status: amountFen >= 0 ? 'ADMIN_CREDIT' : 'ADMIN_DEBIT',
+        reason: reason || (amountFen >= 0 ? '管理员充值' : '管理员扣减'),
         adminUserId,
       },
     })
@@ -167,24 +95,16 @@ export async function adjustBalance(
     return updated
   })
 
-  return { newBalance: Number(result.balance) }
+  return { newBalance: fenToYuan(result.balanceFen) }
 }
-
-// ============================================================
-// Get Balance
-// ============================================================
 
 export async function getUserBalance(userId: string): Promise<number> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { balance: true },
+    select: { balanceFen: true },
   })
-  return Number(user?.balance ?? 0)
+  return fenToYuan(user?.balanceFen ?? 0)
 }
-
-// ============================================================
-// Usage History (queries ImageGenerationRequest)
-// ============================================================
 
 export interface UsageRecord {
   id: string
@@ -192,9 +112,12 @@ export interface UsageRecord {
   size: string | null
   pricingSku: string | null
   unitPrice: number | null
+  unitPriceFen: number | null
   priceVersion: number | null
   cost: number | null
+  costFen: number | null
   costStatus: string | null
+  currency: string
   status: string
   createdAt: Date
   completedAt: Date | null
@@ -222,11 +145,10 @@ export async function getUsageHistory(params: {
   limit: number
 }): Promise<UsageHistoryResult> {
   const { userId, apiKeyId, from, to, costOnly = true, page, limit } = params
-
   const where: Record<string, unknown> = {}
 
   if (costOnly) {
-    where.cost = { not: null }
+    where.costFen = { not: null }
   }
 
   if (userId) {
@@ -255,10 +177,11 @@ export async function getUsageHistory(params: {
         prompt: true,
         size: true,
         pricingSku: true,
-        unitPrice: true,
+        unitPriceFen: true,
         priceVersion: true,
-        cost: true,
+        costFen: true,
         costStatus: true,
+        currency: true,
         status: true,
         createdAt: true,
         completedAt: true,
@@ -281,10 +204,13 @@ export async function getUsageHistory(params: {
       prompt: r.prompt,
       size: r.size,
       pricingSku: r.pricingSku,
-      unitPrice: r.unitPrice !== null ? Number(r.unitPrice) : null,
+      unitPriceFen: r.unitPriceFen,
+      unitPrice: r.unitPriceFen !== null ? fenToYuan(r.unitPriceFen) : null,
       priceVersion: r.priceVersion,
-      cost: r.cost !== null ? Number(r.cost) : null,
+      costFen: r.costFen,
+      cost: r.costFen !== null ? fenToYuan(r.costFen) : null,
       costStatus: r.costStatus,
+      currency: r.currency,
       status: r.status,
       createdAt: r.createdAt,
       completedAt: r.completedAt,
@@ -298,4 +224,50 @@ export async function getUsageHistory(params: {
     limit,
     totalPages: Math.max(1, Math.ceil(total / limit)),
   }
+}
+
+export async function listBalanceLogs(params: {
+  userId?: string
+  q?: string
+  limit: number
+}) {
+  const where: Record<string, unknown> = {}
+
+  if (params.userId) {
+    where.userId = params.userId
+  }
+
+  if (params.q?.trim()) {
+    const query = params.q.trim()
+    where.OR = [
+      { reason: { contains: query, mode: 'insensitive' } },
+      { requestId: { contains: query, mode: 'insensitive' } },
+      { paymentOrder: { is: { outTradeNo: { contains: query, mode: 'insensitive' } } } },
+      { user: { is: { email: { contains: query, mode: 'insensitive' } } } },
+    ]
+  }
+
+  const logs = await prisma.balanceLog.findMany({
+    where,
+    include: {
+      user: {
+        select: { id: true, email: true, name: true, role: true },
+      },
+      paymentOrder: {
+        select: { id: true, outTradeNo: true, providerOrderId: true, status: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: params.limit,
+  })
+
+  return logs.map((log) => ({
+    ...log,
+    amount: fenToYuan(log.amountFen),
+    balanceAfter: log.balanceAfterFen !== null ? fenToYuan(log.balanceAfterFen) : null,
+  }))
+}
+
+export function parseYuanAmountToFen(value: number) {
+  return yuanToFen(value)
 }

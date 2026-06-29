@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
+import { fenToYuan } from '@/lib/money'
 
 export async function GET(request: NextRequest) {
   try {
@@ -52,10 +53,11 @@ export async function GET(request: NextRequest) {
           responseSnapshotJson: isAdmin,
           requestSnapshotJson: isAdmin,
           requestPayloadJson: isAdmin,
-          cost: true,
+          costFen: true,
           costStatus: true,
           pricingSku: true,
-          unitPrice: true,
+          unitPriceFen: true,
+          currency: true,
           priceVersion: true,
           callbackUrl: isAdmin,
           workerJobId: isAdmin,
@@ -86,7 +88,11 @@ export async function GET(request: NextRequest) {
     ])
 
     return NextResponse.json({
-      tasks,
+      tasks: tasks.map((task) => ({
+        ...task,
+        cost: task.costFen !== null ? fenToYuan(task.costFen) : null,
+        unitPrice: task.unitPriceFen !== null ? fenToYuan(task.unitPriceFen) : null,
+      })),
       total,
       page,
       limit,

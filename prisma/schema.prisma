@@ -75,6 +75,14 @@ enum UsageStatus {
   REFUNDED
   ADMIN_CREDIT
   ADMIN_DEBIT
+  PAYMENT_RECHARGE
+}
+
+enum PaymentOrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
 }
 
 // ============================================================
@@ -82,18 +90,21 @@ enum UsageStatus {
 // ============================================================
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  name         String?
-  role         UserRole  @default(USER)
-  enabled      Boolean   @default(true)
-  balance      Decimal   @default(0) @db.Decimal(10, 4)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  apiKeys      ApiKey[]
-  sessions     Session[]
-  balanceLogs  BalanceLog[]
+  id              String         @id @default(cuid())
+  email           String         @unique
+  passwordHash    String
+  name            String?
+  role            UserRole       @default(USER)
+  enabled         Boolean        @default(true)
+  balanceFen      Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  apiKeys         ApiKey[]
+  sessions        Session[]
+  balanceLogs     BalanceLog[]
+  paymentOrders   PaymentOrder[]
+  auditActorLogs  AuditLog[]     @relation("AuditActor")
+  auditTargetLogs AuditLog[]     @relation("AuditTarget")
 
   @@index([role, enabled])
 }
@@ -230,10 +241,11 @@ model ImageGenerationRequest {
   callbackUrl             String?
   idempotencyKey          String?
   metadata                Json?
-  cost                    Decimal?
+  costFen                 Int?
   costStatus              CostStatus?
   pricingSku              String?
-  unitPrice               Decimal?                 @db.Decimal(10, 4)
+  unitPriceFen            Int?
+  currency                String                   @default("CNY")
   priceVersion            Int?
   capacityRequeueCount    Int                      @default(0)
   workerJobId             String?
@@ -438,25 +450,33 @@ model AlertEvent {
 // ============================================================
 
 model BalanceLog {
-  id          String      @id @default(cuid())
-  userId      String
-  amount      Decimal     @db.Decimal(10, 4)  // 正数=入账，负数=扣减
-  status      UsageStatus
-  reason      String?
-  adminUserId String?
-  createdAt   DateTime    @default(now())
+  id             String        @id @default(cuid())
+  userId         String
+  paymentOrderId String?
+  requestId      String?
+  amountFen      Int           // 正数=入账，负数=扣减
+  balanceAfterFen Int?
+  status         UsageStatus
+  reason         String?
+  currency       String        @default("CNY")
+  adminUserId    String?
+  idempotencyKey String?       @unique
+  createdAt      DateTime      @default(now())
 
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentOrder   PaymentOrder? @relation(fields: [paymentOrderId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([status])
+  @@index([paymentOrderId])
+  @@index([requestId])
 }
 
 model PricingSku {
   id        String                   @id @default(cuid())
   sku       String                   @unique
   label     String
-  price     Decimal                  @db.Decimal(10, 4)
+  priceFen  Int
   version   Int                      @default(1)
   enabled   Boolean                  @default(true)
   updatedBy String?
@@ -472,7 +492,7 @@ model PricingSkuPriceHistory {
   pricingSkuId String
   sku          String
   version      Int
-  price        Decimal    @db.Decimal(10, 4)
+  priceFen     Int
   enabled      Boolean
   updatedBy    String?
   createdAt    DateTime   @default(now())
@@ -481,4 +501,70 @@ model PricingSkuPriceHistory {
   @@unique([sku, version])
   @@index([pricingSkuId, version])
   @@index([sku, createdAt(sort: Desc)])
+}
+
+model TopupPackage {
+  id            String         @id @default(cuid())
+  name          String
+  priceFen      Int
+  creditFen     Int
+  bonusFen      Int            @default(0)
+  enabled       Boolean        @default(true)
+  displayOrder  Int            @default(100)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  paymentOrders PaymentOrder[]
+
+  @@index([enabled, displayOrder])
+}
+
+model PaymentOrder {
+  id              String             @id @default(cuid())
+  userId          String
+  packageId       String
+  outTradeNo      String             @unique
+  status          PaymentOrderStatus @default(PENDING)
+  amountFen       Int
+  creditFen       Int
+  currency        String             @default("CNY")
+  payType         String?
+  provider        String?
+  providerOrderId String?            @unique
+  payUrl          String             @default("")
+  payUrl2         String             @default("")
+  qrcodeUrl       String             @default("")
+  qrcodeImg       String             @default("")
+  metadata        Json?
+  notifyPayload   Json?
+  paidAt          DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topupPackage    TopupPackage       @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  balanceLogs     BalanceLog[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model AuditLog {
+  id           String    @id @default(cuid())
+  actorUserId  String?
+  targetUserId String?
+  action       String
+  resourceType String
+  resourceId   String?
+  requestId    String?
+  ip           String?
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+  actorUser    User?     @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  targetUser   User?     @relation("AuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt(sort: Desc)])
+  @@index([resourceType, resourceId])
+  @@index([requestId])
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@index([targetUserId, createdAt(sort: Desc)])
 }

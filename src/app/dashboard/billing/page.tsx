@@ -107,7 +107,7 @@ export default function BillingPage() {
         setError(body.error || 'Failed to adjust balance')
         return
       }
-      setMessage(`Balance updated. New balance: $${body.newBalance.toFixed(4)}`)
+      setMessage(`Balance updated. New balance: ¥${body.newBalance.toFixed(2)}`)
       setAmount('')
       setReason('')
       await loadUsers()
@@ -171,7 +171,7 @@ export default function BillingPage() {
                         {user.name ? <div className="text-xs text-gray-500">{user.name}</div> : null}
                       </td>
                       <td className="px-4 py-3 text-gray-700">{user.role}</td>
-                      <td className="px-4 py-3 font-medium text-gray-900">${user.balance.toFixed(4)}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">¥{user.balance.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -251,8 +251,8 @@ export default function BillingPage() {
                     <td className="px-4 py-3 text-gray-700">{row.apiKeyName}</td>
                     <td className="px-4 py-3 text-gray-700">{row.size || '-'}</td>
                     <td className="px-4 py-3 text-gray-700">{row.pricingSku || '-'}{row.priceVersion ? ` v${row.priceVersion}` : ''}</td>
-                    <td className="px-4 py-3 text-gray-900">{row.unitPrice !== null ? `$${row.unitPrice.toFixed(4)}` : '-'}</td>
-                    <td className="px-4 py-3 text-gray-900">{row.cost !== null ? `$${row.cost.toFixed(4)}` : '-'}</td>
+                    <td className="px-4 py-3 text-gray-900">{row.unitPrice !== null ? `¥${row.unitPrice.toFixed(2)}` : '-'}</td>
+                    <td className="px-4 py-3 text-gray-900">{row.cost !== null ? `¥${row.cost.toFixed(2)}` : '-'}</td>
                     <td className="px-4 py-3 text-gray-700">{row.costStatus || '-'}</td>
                     <td className="px-4 py-3 text-gray-700">{row.status}</td>
                   </tr>
