@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { useDashboardI18n } from '@/lib/dashboard/i18n'
 
 export default function LoginPage() {
+  const { t } = useDashboardI18n()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -25,10 +27,10 @@ export default function LoginPage() {
         window.location.href = '/dashboard'
       } else {
         const body = await res.json().catch(() => ({}))
-        setError(body.error || 'Invalid credentials')
+        setError(body.error || t('invalidCredentials'))
       }
     } catch {
-      setError('Connection error. Please try again.')
+      setError(t('connectionError'))
     } finally {
       setLoading(false)
     }
@@ -39,13 +41,13 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">Image Worker</h1>
-            <p className="text-sm text-gray-500 mt-1">Sign in to your account</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('appName')}</h1>
+            <p className="text-sm text-gray-500 mt-1">{t('loginSubtitle')}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
               <input
                 id="email"
                 type="email"
@@ -59,14 +61,14 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">{t('password')}</label>
               <input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter your password"
+                placeholder={t('enterPassword')}
                 required
               />
             </div>
@@ -80,14 +82,14 @@ export default function LoginPage() {
               disabled={loading || !email || !password}
               className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? t('signingIn') : t('signIn')}
             </button>
           </form>
 
           <p className="mt-4 text-sm text-center text-gray-500">
-            No account yet?{' '}
+            {t('registerLinkLead')}{' '}
             <Link href="/dashboard/register" className="text-blue-600 hover:text-blue-700 font-medium">
-              Register
+              {t('register')}
             </Link>
           </p>
         </div>

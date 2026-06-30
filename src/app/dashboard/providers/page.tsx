@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { fetchCurrentUser } from '@/lib/dashboard/auth'
 import { groupImageProviderModel } from '@/lib/image-models'
 import { Plus, Pencil, ArrowUp, ArrowDown, Power, PowerOff, X, Eye, Copy, Check, Trash2, RotateCcw } from 'lucide-react'
+import { useDashboardI18n } from '@/lib/dashboard/i18n'
 
 interface Provider {
   id: string
@@ -108,20 +109,22 @@ function getGroupLabel(model: string, modelProviders: Provider[]) {
 }
 
 function StatusBadge({ provider }: { provider: Provider }) {
+  const { lang, t } = useDashboardI18n()
   if (provider.circuitBreakerTrippedAt) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">TRIPPED</span>
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">{lang === 'zh' ? '已熔断' : 'TRIPPED'}</span>
   }
   if (!provider.enabled) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Disabled</span>
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">{t('disabled')}</span>
   }
   if (provider.cooldownUntil && new Date(provider.cooldownUntil) > new Date()) {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Cooldown</span>
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">{lang === 'zh' ? '冷却中' : 'Cooldown'}</span>
   }
-  return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Enabled</span>
+  return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">{t('enabled')}</span>
 }
 
 export default function ProvidersPage() {
   const router = useRouter()
+  const { lang, t } = useDashboardI18n()
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -149,7 +152,7 @@ export default function ProvidersPage() {
       setProviders(Array.isArray(json) ? json : json.data ?? json.providers ?? [])
       setError('')
     } catch {
-      setError('Failed to load providers')
+      setError(lang === 'zh' ? '加载供应商失败' : 'Failed to load providers')
     } finally {
       setLoading(false)
     }
@@ -209,7 +212,7 @@ export default function ProvidersPage() {
         })
         setShowSecretModal(true)
       } else {
-        alert(body.error || 'Failed to load provider API key')
+        alert(body.error || (lang === 'zh' ? '加载 Provider API Key 失败' : 'Failed to load provider API key'))
       }
     } finally {
       setActionLoading(null)
@@ -226,7 +229,7 @@ export default function ProvidersPage() {
         await fetchProviders()
       } else {
         const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to reset breaker')
+        alert(body.error || (lang === 'zh' ? '重置熔断器失败' : 'Failed to reset breaker'))
       }
     } finally {
       setActionLoading(null)
@@ -269,7 +272,7 @@ export default function ProvidersPage() {
         await fetchProviders()
       } else {
         const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to create provider')
+        alert(body.error || (lang === 'zh' ? '创建供应商失败' : 'Failed to create provider'))
       }
     } finally {
       setSubmitting(false)
@@ -291,7 +294,7 @@ export default function ProvidersPage() {
         await fetchProviders()
       } else {
         const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to update provider')
+        alert(body.error || (lang === 'zh' ? '更新供应商失败' : 'Failed to update provider'))
       }
     } finally {
       setSubmitting(false)
@@ -300,11 +303,11 @@ export default function ProvidersPage() {
 
   async function deleteProvider(p: Provider) {
     if (p.enabled) {
-      alert('Please disable the provider before deleting it.')
+      alert(lang === 'zh' ? '请先禁用该供应商再删除。' : 'Please disable the provider before deleting it.')
       return
     }
 
-    if (!confirm(`Delete provider "${p.name}"? This action cannot be undone.`)) return
+    if (!confirm(lang === 'zh' ? `确认删除供应商“${p.name}”吗？此操作无法撤销。` : `Delete provider "${p.name}"? This action cannot be undone.`)) return
 
     setActionLoading(p.id)
     try {
@@ -315,28 +318,28 @@ export default function ProvidersPage() {
         await fetchProviders()
       } else {
         const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to delete provider')
+        alert(body.error || (lang === 'zh' ? '删除供应商失败' : 'Failed to delete provider'))
       }
     } finally {
       setActionLoading(null)
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading providers...</div></div>
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-500">{lang === 'zh' ? '正在加载供应商...' : 'Loading providers...'}</div></div>
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Providers</h2>
+        <h2 className="text-2xl font-bold text-gray-900">{t('navProviders')}</h2>
         <button onClick={() => setShowAddModal(true)} className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium">
-          <Plus className="w-4 h-4" /> Add Provider
+          <Plus className="w-4 h-4" /> {lang === 'zh' ? '新增供应商' : 'Add Provider'}
         </button>
       </div>
 
       {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
 
       {providers.length === 0 ? (
-        <div className="rounded-lg shadow-sm border border-gray-200 bg-white px-4 py-8 text-center text-gray-400">No providers configured</div>
+        <div className="rounded-lg shadow-sm border border-gray-200 bg-white px-4 py-8 text-center text-gray-400">{lang === 'zh' ? '尚未配置供应商' : 'No providers configured'}</div>
       ) : (
         <div className="space-y-6">
           {groupProvidersByModel(providers).map(([model, modelProviders]) => (
@@ -358,15 +361,15 @@ export default function ProvidersPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
-                      <th className="px-4 py-2.5 font-medium">Name</th>
-                      <th className="px-4 py-2.5 font-medium">Vendor</th>
-                      <th className="px-4 py-2.5 font-medium">Status</th>
-                      <th className="px-4 py-2.5 font-medium">Priority</th>
-                      <th className="px-4 py-2.5 font-medium">Max Concurrent</th>
-                      <th className="px-4 py-2.5 font-medium">Success Rate</th>
-                      <th className="px-4 py-2.5 font-medium">Avg Latency</th>
-                      <th className="px-4 py-2.5 font-medium">Cost/Req</th>
-                      <th className="px-4 py-2.5 font-medium">Actions</th>
+                      <th className="px-4 py-2.5 font-medium">{t('name')}</th>
+                      <th className="px-4 py-2.5 font-medium">{t('vendor')}</th>
+                      <th className="px-4 py-2.5 font-medium">{t('status')}</th>
+                      <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '优先级' : 'Priority'}</th>
+                      <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '最大并发' : 'Max Concurrent'}</th>
+                      <th className="px-4 py-2.5 font-medium">{t('successRate')}</th>
+                      <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '平均延迟' : 'Avg Latency'}</th>
+                      <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '单次成本' : 'Cost/Req'}</th>
+                      <th className="px-4 py-2.5 font-medium">{t('actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -378,19 +381,19 @@ export default function ProvidersPage() {
                         <td className="px-4 py-2.5 text-gray-600">{p.priority}</td>
                         <td className="px-4 py-2.5 text-gray-600">{p.maxConcurrent}</td>
                         <td className="px-4 py-2.5 text-gray-600">{successRate(p)}</td>
-                        <td className="px-4 py-2.5 text-gray-600">{p.avgDurationMs > 0 ? `${p.avgDurationMs}ms` : 'N/A'}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{p.avgDurationMs > 0 ? `${p.avgDurationMs}ms` : t('na')}</td>
                         <td className="px-4 py-2.5 text-gray-600">${p.estimatedCostPerReq.toFixed(4)}</td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-1">
-                            <button onClick={() => toggleEnabled(p)} disabled={actionLoading === p.id} title={p.enabled ? 'Disable' : 'Enable'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50">{p.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}</button>
+                            <button onClick={() => toggleEnabled(p)} disabled={actionLoading === p.id} title={p.enabled ? (lang === 'zh' ? '禁用' : 'Disable') : (lang === 'zh' ? '启用' : 'Enable')} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50">{p.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}</button>
                             {p.circuitBreakerTrippedAt && (
-                              <button onClick={() => resetBreaker(p)} disabled={actionLoading === p.id} title="Reset breaker" className="p-1 rounded hover:bg-emerald-50 text-gray-500 hover:text-emerald-700 disabled:opacity-50"><RotateCcw className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => resetBreaker(p)} disabled={actionLoading === p.id} title={lang === 'zh' ? '重置熔断器' : 'Reset breaker'} className="p-1 rounded hover:bg-emerald-50 text-gray-500 hover:text-emerald-700 disabled:opacity-50"><RotateCcw className="w-3.5 h-3.5" /></button>
                             )}
-                            <button onClick={() => movePriority(p, 'up')} disabled={actionLoading === p.id} title="Move up" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowUp className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => movePriority(p, 'down')} disabled={actionLoading === p.id} title="Move down" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowDown className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => openEdit(p)} title="Edit" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"><Pencil className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => showKey(p)} disabled={actionLoading === p.id} title="Show API Key" className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><Eye className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => deleteProvider(p)} disabled={actionLoading === p.id} title="Delete Provider" className="p-1 rounded hover:bg-red-50 text-gray-500 hover:text-red-700 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => movePriority(p, 'up')} disabled={actionLoading === p.id} title={lang === 'zh' ? '上移' : 'Move up'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowUp className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => movePriority(p, 'down')} disabled={actionLoading === p.id} title={lang === 'zh' ? '下移' : 'Move down'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowDown className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => openEdit(p)} title={lang === 'zh' ? '编辑' : 'Edit'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => showKey(p)} disabled={actionLoading === p.id} title={lang === 'zh' ? '查看 API Key' : 'Show API Key'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><Eye className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => deleteProvider(p)} disabled={actionLoading === p.id} title={lang === 'zh' ? '删除供应商' : 'Delete Provider'} className="p-1 rounded hover:bg-red-50 text-gray-500 hover:text-red-700 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         </td>
                       </tr>
@@ -404,9 +407,9 @@ export default function ProvidersPage() {
       )}
 
       {showAddModal && (
-        <Modal title="Add Provider" onClose={() => setShowAddModal(false)}>
+        <Modal title={lang === 'zh' ? '新增供应商' : 'Add Provider'} onClose={() => setShowAddModal(false)}>
           <form onSubmit={handleAdd} className="space-y-3">
-            <Field label="Name"><input type="text" value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+            <Field label={t('name')}><input type="text" value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Vendor"><input type="text" value={addForm.vendor} onChange={(e) => setAddForm({ ...addForm, vendor: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Base URL"><input type="url" value={addForm.baseUrl} onChange={(e) => setAddForm({ ...addForm, baseUrl: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Model"><input type="text" value={addForm.model} onChange={(e) => setAddForm({ ...addForm, model: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
@@ -417,15 +420,15 @@ export default function ProvidersPage() {
             </div>
             <Field label="API Key"><input type="password" value={addForm.apiKeyPlaintext} onChange={(e) => setAddForm({ ...addForm, apiKeyPlaintext: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-1.5 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">Cancel</button>
-              <button type="submit" disabled={submitting} className="px-4 py-1.5 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">{submitting ? 'Creating...' : 'Create'}</button>
+              <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-1.5 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">{lang === 'zh' ? '取消' : 'Cancel'}</button>
+              <button type="submit" disabled={submitting} className="px-4 py-1.5 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">{submitting ? (lang === 'zh' ? '创建中...' : 'Creating...') : (lang === 'zh' ? '创建' : 'Create')}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {editProvider && (
-        <Modal title={`Edit: ${editProvider.name}`} onClose={() => setEditProvider(null)}>
+        <Modal title={lang === 'zh' ? `编辑：${editProvider.name}` : `Edit: ${editProvider.name}`} onClose={() => setEditProvider(null)}>
           <form onSubmit={handleEdit} className="space-y-3">
             <Field label="Name"><input type="text" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Vendor"><input type="text" value={editForm.vendor} onChange={(e) => setEditForm({ ...editForm, vendor: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
@@ -437,25 +440,25 @@ export default function ProvidersPage() {
               <Field label="Cost/Req ($)"><input type="number" step="0.0001" value={editForm.estimatedCostPerReq} onChange={(e) => setEditForm({ ...editForm, estimatedCostPerReq: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setEditProvider(null)} className="px-4 py-1.5 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">Cancel</button>
-              <button type="submit" disabled={submitting} className="px-4 py-1.5 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">{submitting ? 'Saving...' : 'Save'}</button>
+              <button type="button" onClick={() => setEditProvider(null)} className="px-4 py-1.5 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">{lang === 'zh' ? '取消' : 'Cancel'}</button>
+              <button type="submit" disabled={submitting} className="px-4 py-1.5 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">{submitting ? t('saving') : (lang === 'zh' ? '保存' : 'Save')}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {showSecretModal && providerSecret && (
-        <Modal title={`Provider API Key: ${providerSecret.name}`} onClose={() => { setShowSecretModal(false); setProviderSecret(null); setSecretCopied(false) }}>
+        <Modal title={lang === 'zh' ? `Provider API Key：${providerSecret.name}` : `Provider API Key: ${providerSecret.name}`} onClose={() => { setShowSecretModal(false); setProviderSecret(null); setSecretCopied(false) }}>
           <div className="space-y-3">
-            <p className="text-sm text-gray-500">This key is stored encrypted and shown here only for administrative review.</p>
+            <p className="text-sm text-gray-500">{lang === 'zh' ? '该密钥以加密形式存储，这里仅供管理员查看。' : 'This key is stored encrypted and shown here only for administrative review.'}</p>
             <div className="flex items-center gap-2">
               <code className="flex-1 bg-gray-50 border border-gray-200 rounded px-3 py-2 text-sm font-mono text-gray-900 break-all">{providerSecret.apiKey}</code>
-              <button onClick={copySecret} className="p-2 bg-white border border-gray-300 rounded hover:bg-gray-100 text-gray-700 shrink-0" title="Copy">
+              <button onClick={copySecret} className="p-2 bg-white border border-gray-300 rounded hover:bg-gray-100 text-gray-700 shrink-0" title={lang === 'zh' ? '复制' : 'Copy'}>
                 {secretCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
             <div className="flex justify-end pt-2">
-              <button type="button" onClick={() => { setShowSecretModal(false); setProviderSecret(null); setSecretCopied(false) }} className="px-4 py-1.5 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">Close</button>
+              <button type="button" onClick={() => { setShowSecretModal(false); setProviderSecret(null); setSecretCopied(false) }} className="px-4 py-1.5 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors">{lang === 'zh' ? '关闭' : 'Close'}</button>
             </div>
           </div>
         </Modal>

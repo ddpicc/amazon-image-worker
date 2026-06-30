@@ -8,6 +8,32 @@ export function yuanToFen(value: number): number {
   return Math.round(value * 100)
 }
 
+export function parseYuanToFen(value: string): number {
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new Error('请输入充值金额')
+  }
+
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
+    throw new Error('充值金额格式不正确，最多支持两位小数')
+  }
+
+  const [yuanPart, fenPart = ''] = normalized.split('.')
+  const yuan = Number(yuanPart)
+  const fen = Number((fenPart + '00').slice(0, 2))
+
+  if (!Number.isFinite(yuan) || yuan < 0) {
+    throw new Error('充值金额必须大于 0')
+  }
+
+  const totalFen = yuan * 100 + fen
+  if (!Number.isInteger(totalFen) || totalFen <= 0) {
+    throw new Error('充值金额必须大于 0')
+  }
+
+  return totalFen
+}
+
 export function fenToYuan(value: number | null | undefined): number {
   if (value === null || value === undefined) {
     return 0

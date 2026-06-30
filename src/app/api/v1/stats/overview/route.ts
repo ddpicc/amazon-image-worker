@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
         providerName: failure.selectedProviderName,
         errorMessage: failure.errorMessage,
         createdAt: failure.createdAt,
+        durationMs: failure.durationMs,
       })),
     })
   } catch (error) {

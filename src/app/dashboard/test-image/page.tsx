@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchCurrentUser } from '@/lib/dashboard/auth'
 import { SIZE_OPTIONS } from '@/lib/image-options'
+import { taskStatusLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
 
 type TaskStatus = 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
 type TestMode = 'queue' | 'direct'
@@ -106,6 +107,7 @@ function formatBytes(bytes: number | null | undefined): string {
 
 export default function AdminTestImagePage() {
   const router = useRouter()
+  const { lang } = useDashboardI18n()
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
@@ -161,7 +163,7 @@ export default function AdminTestImagePage() {
         })
         const json = await res.json().catch(() => null)
         if (!res.ok) {
-          throw new Error(json?.error || `Failed to load providers (${res.status})`)
+          throw new Error(json?.error || (lang === 'zh' ? `加载供应商失败（${res.status}）` : `Failed to load providers (${res.status})`))
         }
 
         const nextProviders = json?.data || []
@@ -171,7 +173,7 @@ export default function AdminTestImagePage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load providers')
+          setError(err instanceof Error ? err.message : (lang === 'zh' ? '加载供应商失败' : 'Failed to load providers'))
         }
       }
     }
@@ -194,7 +196,7 @@ export default function AdminTestImagePage() {
       const res = await fetch(`/api/v1/tasks/${requestId}`, { cache: 'no-store' })
       const json = await res.json().catch(() => null)
       if (!res.ok) {
-        throw new Error(json?.error || `Failed to load task (${res.status})`)
+        throw new Error(json?.error || (lang === 'zh' ? `加载任务失败（${res.status}）` : `Failed to load task (${res.status})`))
       }
       if (!cancelled) {
         setTask(json?.data ?? null)
@@ -203,7 +205,7 @@ export default function AdminTestImagePage() {
 
     loadTask().catch((err) => {
       if (!cancelled) {
-        setError(err instanceof Error ? err.message : 'Failed to load task')
+        setError(err instanceof Error ? err.message : (lang === 'zh' ? '加载任务失败' : 'Failed to load task'))
       }
     })
 
@@ -217,7 +219,7 @@ export default function AdminTestImagePage() {
       if (document.visibilityState === 'visible') {
         loadTask().catch((err) => {
           if (!cancelled) {
-            setError(err instanceof Error ? err.message : 'Failed to load task')
+            setError(err instanceof Error ? err.message : (lang === 'zh' ? '加载任务失败' : 'Failed to load task'))
           }
         })
       }
@@ -256,6 +258,19 @@ export default function AdminTestImagePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode])
 
+  const providerStateLabel = (state: ReturnType<typeof getProviderState>) => {
+    switch (state) {
+      case 'TRIPPED':
+        return lang === 'zh' ? '已熔断' : 'Tripped'
+      case 'DISABLED':
+        return lang === 'zh' ? '已禁用' : 'Disabled'
+      case 'COOLDOWN':
+        return lang === 'zh' ? '冷却中' : 'Cooldown'
+      default:
+        return lang === 'zh' ? '可用' : 'Enabled'
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
@@ -272,7 +287,7 @@ export default function AdminTestImagePage() {
         })
         const keyJson = await keyRes.json().catch(() => null)
         if (!keyRes.ok) {
-          throw new Error(keyJson?.error || 'Failed to create temporary API key')
+          throw new Error(keyJson?.error || (lang === 'zh' ? '创建临时 API Key 失败' : 'Failed to create temporary API key'))
         }
 
         const testRawKey = keyJson.data.key as string
@@ -289,7 +304,7 @@ export default function AdminTestImagePage() {
         if (editMode) {
           const urls = referenceImageUrls.map((u) => u.trim()).filter(Boolean)
           if (urls.length === 0) {
-            throw new Error('At least one reference image URL is required for edit mode')
+            throw new Error(lang === 'zh' ? '图生图模式至少需要一张参考图 URL' : 'At least one reference image URL is required for edit mode')
           }
           body.image = urls
         }
@@ -304,7 +319,7 @@ export default function AdminTestImagePage() {
         })
         const submitJson = await submitRes.json().catch(() => null)
         if (!submitRes.ok) {
-          throw new Error(submitJson?.error || 'Failed to submit task')
+          throw new Error(submitJson?.error || (lang === 'zh' ? '提交任务失败' : 'Failed to submit task'))
         }
 
         const nextRequestId = submitJson.id as string
@@ -313,7 +328,7 @@ export default function AdminTestImagePage() {
           id: nextRequestId,
           prompt: prompt.trim(),
           status: 'QUEUED',
-          statusMessage: 'Task submitted',
+          statusMessage: lang === 'zh' ? '任务已提交' : 'Task submitted',
           errorMessage: null,
           selectedProviderName: null,
           durationMs: null,
@@ -326,7 +341,7 @@ export default function AdminTestImagePage() {
       }
 
       if (!selectedProviderId) {
-        throw new Error('Please select a provider')
+        throw new Error(lang === 'zh' ? '请选择供应商' : 'Please select a provider')
       }
 
       const directBody: Record<string, unknown> = {
@@ -337,7 +352,7 @@ export default function AdminTestImagePage() {
       if (editMode) {
         const urls = referenceImageUrls.map((u) => u.trim()).filter(Boolean)
         if (urls.length === 0) {
-          throw new Error('At least one reference image URL is required for edit mode')
+          throw new Error(lang === 'zh' ? '图生图模式至少需要一张参考图 URL' : 'At least one reference image URL is required for edit mode')
         }
         directBody.image_urls = urls
       }
@@ -352,12 +367,12 @@ export default function AdminTestImagePage() {
       })
       const directJson = await directRes.json().catch(() => null)
       if (!directRes.ok) {
-        throw new Error(directJson?.error || 'Failed to test provider directly')
+        throw new Error(directJson?.error || (lang === 'zh' ? '直连测试供应商失败' : 'Failed to test provider directly'))
       }
 
       setDirectResult(directJson.data as DirectTestResult)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit test task')
+      setError(err instanceof Error ? err.message : (lang === 'zh' ? '提交测试任务失败' : 'Failed to submit test task'))
     } finally {
       setSubmitting(false)
     }
@@ -378,7 +393,7 @@ export default function AdminTestImagePage() {
       })
       const json = await res.json().catch(() => null)
       if (!res.ok) {
-        throw new Error(json?.error || 'Failed to reset breaker')
+        throw new Error(json?.error || (lang === 'zh' ? '重置熔断器失败' : 'Failed to reset breaker'))
       }
 
       setProviders((current) => current.map((provider) => (
@@ -404,32 +419,32 @@ export default function AdminTestImagePage() {
         },
       } : current)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset breaker')
+      setError(err instanceof Error ? err.message : (lang === 'zh' ? '重置熔断器失败' : 'Failed to reset breaker'))
     } finally {
       setResettingBreaker(false)
     }
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading...</div></div>
+    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">{lang === 'zh' ? '加载中...' : 'Loading...'}</div></div>
   }
 
   return (
     <div className="max-w-5xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Test Image</h2>
-          <p className="mt-1 text-sm text-gray-500">管理员测试页。既可以测试真实队列提交流程，也可以直接测试单个 provider。支持文生图和图生图。</p>
+          <h2 className="text-2xl font-bold text-gray-900">{lang === 'zh' ? '测试生图' : 'Test Image'}</h2>
+          <p className="mt-1 text-sm text-gray-500">{lang === 'zh' ? '管理员测试页。既可以测试真实队列提交流程，也可以直接测试单个 provider。支持文生图和图生图。' : 'Admin testing page for both real queue submissions and direct provider calls. Supports text-to-image and image-to-image.'}</p>
         </div>
         <Link href="/dashboard/tasks" className="text-sm text-blue-600 hover:text-blue-700">
-          View All Tasks
+          {lang === 'zh' ? '查看全部任务' : 'View All Tasks'}
         </Link>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Test Mode</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'zh' ? '测试模式' : 'Test Mode'}</label>
             <div className="flex flex-wrap gap-3">
               <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                 <input
@@ -439,7 +454,7 @@ export default function AdminTestImagePage() {
                   checked={mode === 'queue'}
                   onChange={() => setMode('queue')}
                 />
-                Queue test
+                {lang === 'zh' ? '队列测试' : 'Queue test'}
               </label>
               <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                 <input
@@ -449,13 +464,13 @@ export default function AdminTestImagePage() {
                   checked={mode === 'direct'}
                   onChange={() => setMode('direct')}
                 />
-                Direct provider test
+                {lang === 'zh' ? '直连 Provider 测试' : 'Direct provider test'}
               </label>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Image Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'zh' ? '图片类型' : 'Image Type'}</label>
             <div className="flex flex-wrap gap-3">
               <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                 <input
@@ -464,7 +479,7 @@ export default function AdminTestImagePage() {
                   checked={!editMode}
                   onChange={() => setEditMode(false)}
                 />
-                Text-to-Image (generate)
+                {lang === 'zh' ? '文生图（generate）' : 'Text-to-Image (generate)'}
               </label>
               <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                 <input
@@ -473,36 +488,36 @@ export default function AdminTestImagePage() {
                   checked={editMode}
                   onChange={() => setEditMode(true)}
                 />
-                Image-to-Image (edit)
+                {lang === 'zh' ? '图生图（edit）' : 'Image-to-Image (edit)'}
               </label>
             </div>
           </div>
 
           {mode === 'direct' && (
             <div className="max-w-xl">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '供应商' : 'Provider'}</label>
               <select
                 value={selectedProviderId}
                 onChange={(e) => setSelectedProviderId(e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
-                <option value="">Select a provider</option>
+                <option value="">{lang === 'zh' ? '选择一个供应商' : 'Select a provider'}</option>
                 {providers.map((provider) => {
                   const state = getProviderState(provider)
                   return (
                     <option key={provider.id} value={provider.id}>
-                      {provider.name} · {provider.vendor} · {provider.model} · {state}
+                      {provider.name} · {provider.vendor} · {provider.model} · {providerStateLabel(state)}
                     </option>
                   )
                 })}
               </select>
-              <p className="mt-1 text-xs text-gray-500">Direct mode bypasses internal enqueue/worker and calls the selected provider directly.</p>
+              <p className="mt-1 text-xs text-gray-500">{lang === 'zh' ? '直连模式会绕过内部队列和 worker，直接调用选中的 provider。' : 'Direct mode bypasses internal enqueue/worker and calls the selected provider directly.'}</p>
             </div>
           )}
 
           {editMode && (
             <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700">Reference Image URLs (1-16)</label>
+              <label className="block text-sm font-medium text-gray-700">{lang === 'zh' ? '参考图 URL（1-16）' : 'Reference Image URLs (1-16)'}</label>
               {referenceImageUrls.map((url, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <input
@@ -517,7 +532,7 @@ export default function AdminTestImagePage() {
                     onClick={() => removeReferenceImage(index)}
                     disabled={referenceImageUrls.length <= 1}
                     className="rounded-md border border-gray-200 px-2 py-2 text-sm text-red-500 hover:bg-red-50 disabled:opacity-30"
-                    title="Remove"
+                    title={lang === 'zh' ? '移除' : 'Remove'}
                   >
                     ✕
                   </button>
@@ -529,25 +544,25 @@ export default function AdminTestImagePage() {
                 disabled={referenceImageUrls.length >= 16}
                 className="text-sm text-blue-600 hover:text-blue-700 disabled:opacity-30"
               >
-                + Add reference image ({referenceImageUrls.length}/16)
+                {lang === 'zh' ? `+ 添加参考图（${referenceImageUrls.length}/16）` : `+ Add reference image (${referenceImageUrls.length}/16)`}
               </button>
-              <p className="text-xs text-gray-400">Publicly accessible HTTP/HTTPS image URLs only.</p>
+              <p className="text-xs text-gray-400">{lang === 'zh' ? '仅支持可公开访问的 HTTP/HTTPS 图片 URL。' : 'Publicly accessible HTTP/HTTPS image URLs only.'}</p>
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '提示词' : 'Prompt'}</label>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={5}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              placeholder="Describe the image to generate"
+              placeholder={lang === 'zh' ? '描述你要生成的图片' : 'Describe the image to generate'}
             />
           </div>
 
           <div className="max-w-lg">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Size</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '尺寸' : 'Size'}</label>
             <select
               value={size}
               onChange={(e) => setSize(e.target.value)}
@@ -560,7 +575,7 @@ export default function AdminTestImagePage() {
               ))}
             </select>
             <p className="mt-2 text-xs text-gray-500">
-              1K means roughly 1024 pixels on the long side for the standard preset; 2K means roughly 2048 pixels on the long side.
+              {lang === 'zh' ? '1K 通常表示长边约 1024 像素，2K 通常表示长边约 2048 像素。' : '1K means roughly 1024 pixels on the long side for the standard preset; 2K means roughly 2048 pixels on the long side.'}
             </p>
           </div>
 
@@ -570,11 +585,11 @@ export default function AdminTestImagePage() {
               disabled={submitting || !prompt.trim() || (mode === 'direct' && !selectedProviderId)}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {submitting ? 'Submitting...' : mode === 'queue' ? 'Submit Queue Test' : 'Run Direct Provider Test'}
+              {submitting ? (lang === 'zh' ? '提交中...' : 'Submitting...') : mode === 'queue' ? (lang === 'zh' ? '提交队列测试' : 'Submit Queue Test') : (lang === 'zh' ? '运行直连 Provider 测试' : 'Run Direct Provider Test')}
             </button>
             {mode === 'queue' && requestId && (
               <span className="text-xs text-gray-500">
-                Request ID: <span className="font-mono">{requestId}</span>
+                {lang === 'zh' ? '请求 ID：' : 'Request ID: '}<span className="font-mono">{requestId}</span>
               </span>
             )}
           </div>
@@ -591,7 +606,7 @@ export default function AdminTestImagePage() {
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Latest Queue Test Task</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{lang === 'zh' ? '最新队列测试任务' : 'Latest Queue Test Task'}</h3>
               <p className="mt-1 text-sm text-gray-500 break-all">{task.prompt}</p>
             </div>
             <div className="text-right">
@@ -604,7 +619,7 @@ export default function AdminTestImagePage() {
                       ? 'bg-yellow-100 text-yellow-800'
                       : 'bg-gray-100 text-gray-800'
               }`}>
-                {task.status}
+                {taskStatusLabel(lang, task.status)}
               </div>
               <div className="mt-2 text-xs text-gray-500">{task.statusMessage || '-'}</div>
             </div>
@@ -612,19 +627,19 @@ export default function AdminTestImagePage() {
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Provider</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '供应商' : 'Provider'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{task.selectedProviderName || '-'}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Duration</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '耗时' : 'Duration'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{formatDuration(task.durationMs)}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Attempts</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '尝试次数' : 'Attempts'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{task.attempts.length}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Assets</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '图片数' : 'Assets'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{task.assets.length}</div>
             </div>
           </div>
@@ -637,17 +652,17 @@ export default function AdminTestImagePage() {
 
           {task.attempts.length > 0 && (
             <div>
-              <h4 className="mb-2 text-sm font-medium text-gray-900">Attempts</h4>
+              <h4 className="mb-2 text-sm font-medium text-gray-900">{lang === 'zh' ? '尝试记录' : 'Attempts'}</h4>
               <div className="space-y-2">
                 {task.attempts.map((attempt) => (
                   <div key={attempt.id} className="rounded border border-gray-200 p-3 text-sm">
                     <div className="flex items-center justify-between gap-4">
                       <div className="text-gray-700">
-                        Attempt #{attempt.attemptIndex} · {attempt.model}
+                        {lang === 'zh' ? `第 ${attempt.attemptIndex} 次尝试` : `Attempt #${attempt.attemptIndex}`} · {attempt.model}
                       </div>
                       <div className="text-xs text-gray-500">{formatDuration(attempt.durationMs)}</div>
                     </div>
-                    <div className="mt-1 text-xs text-gray-500">{attempt.status}</div>
+                    <div className="mt-1 text-xs text-gray-500">{taskStatusLabel(lang, attempt.status === 'STARTED' ? 'PROCESSING' : attempt.status)}</div>
                     {attempt.errorMessage && <div className="mt-2 text-xs text-red-600">{attempt.errorMessage}</div>}
                   </div>
                 ))}
@@ -657,7 +672,7 @@ export default function AdminTestImagePage() {
 
           {task.assets.length > 0 && (
             <div>
-              <h4 className="mb-2 text-sm font-medium text-gray-900">Generated Images</h4>
+              <h4 className="mb-2 text-sm font-medium text-gray-900">{lang === 'zh' ? '生成图片' : 'Generated Images'}</h4>
               <div className="flex flex-wrap gap-4">
                 {task.assets.map((asset) => (
                   <a
@@ -683,16 +698,16 @@ export default function AdminTestImagePage() {
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Direct Provider Test Result</h3>
+              <h3 className="text-lg font-semibold text-gray-900">{lang === 'zh' ? '直连供应商测试结果' : 'Direct Provider Test Result'}</h3>
               <p className="mt-1 text-sm text-gray-500 break-all">{directResult.prompt}</p>
             </div>
             <div className="text-right space-y-2">
               <div className="rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
-                SUCCESS
+                {lang === 'zh' ? '成功' : 'SUCCESS'}
               </div>
               <div>
                 <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ${providerStateBadgeClass(getProviderState(directResult.provider))}`}>
-                  {getProviderState(directResult.provider)}
+                  {providerStateLabel(getProviderState(directResult.provider))}
                 </span>
               </div>
             </div>
@@ -700,26 +715,26 @@ export default function AdminTestImagePage() {
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Provider</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '供应商' : 'Provider'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{directResult.provider.name}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Model</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '模型' : 'Model'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{directResult.provider.model}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Mode</div>
-              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.mode === 'edit' ? 'Edit (image-to-image)' : 'Generate'}</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '模式' : 'Mode'}</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.mode === 'edit' ? (lang === 'zh' ? '图生图' : 'Edit (image-to-image)') : (lang === 'zh' ? '文生图' : 'Generate')}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Duration</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '耗时' : 'Duration'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{formatDuration(directResult.durationMs)}</div>
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Image Size</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '图片大小' : 'Image Size'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{formatBytes(directResult.bytes)}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
@@ -727,31 +742,31 @@ export default function AdminTestImagePage() {
               <div className="mt-1 text-sm font-medium text-gray-900">{directResult.mimeType}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Returned Kind</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '返回类型' : 'Returned Kind'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{directResult.returnedImageUrlKind}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Ref Images</div>
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '参考图数量' : 'Ref Images'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{directResult.referenceImageUrls.length}</div>
             </div>
           </div>
 
           <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 space-y-1">
-            <div><span className="font-medium">Vendor:</span> {directResult.provider.vendor}</div>
-            <div><span className="font-medium">Base URL:</span> {directResult.provider.baseUrl}</div>
-            <div><span className="font-medium">Returned kind:</span> {directResult.returnedImageUrlKind}</div>
-            <div><span className="font-medium">MIME type:</span> {directResult.mimeType}</div>
+            <div><span className="font-medium">{lang === 'zh' ? '厂商：' : 'Vendor:'}</span> {directResult.provider.vendor}</div>
+            <div><span className="font-medium">{lang === 'zh' ? 'Base URL：' : 'Base URL:'}</span> {directResult.provider.baseUrl}</div>
+            <div><span className="font-medium">{lang === 'zh' ? '返回类型：' : 'Returned kind:'}</span> {directResult.returnedImageUrlKind}</div>
+            <div><span className="font-medium">{lang === 'zh' ? 'MIME 类型：' : 'MIME type:'}</span> {directResult.mimeType}</div>
             {directResult.provider.circuitBreakerTripReason && (
-              <div className="text-red-700"><span className="font-medium">Trip reason:</span> {directResult.provider.circuitBreakerTripReason}</div>
+              <div className="text-red-700"><span className="font-medium">{lang === 'zh' ? '熔断原因：' : 'Trip reason:'}</span> {directResult.provider.circuitBreakerTripReason}</div>
             )}
             {directResult.upstreamImageUrl && (
-              <div className="break-all"><span className="font-medium">Upstream URL:</span> {directResult.upstreamImageUrl}</div>
+              <div className="break-all"><span className="font-medium">{lang === 'zh' ? '上游图片 URL：' : 'Upstream URL:'}</span> {directResult.upstreamImageUrl}</div>
             )}
           </div>
 
           {directResult.referenceImageUrls.length > 0 && (
             <div>
-              <h4 className="mb-2 text-sm font-medium text-gray-900">Reference Images</h4>
+              <h4 className="mb-2 text-sm font-medium text-gray-900">{lang === 'zh' ? '参考图' : 'Reference Images'}</h4>
               <div className="flex flex-wrap gap-3">
                 {directResult.referenceImageUrls.map((url, index) => (
                   <a
@@ -761,7 +776,7 @@ export default function AdminTestImagePage() {
                     rel="noopener noreferrer"
                     className="block overflow-hidden rounded-lg border border-gray-200 bg-gray-50"
                   >
-                    <img src={url} alt={`Reference ${index + 1}`} className="h-32 w-32 object-cover" />
+                    <img src={url} alt={lang === 'zh' ? `参考图 ${index + 1}` : `Reference ${index + 1}`} className="h-32 w-32 object-cover" />
                     <div className="border-t border-gray-200 px-2 py-1 text-xs text-gray-500">#{index + 1}</div>
                   </a>
                 ))}
@@ -777,15 +792,15 @@ export default function AdminTestImagePage() {
                 disabled={resettingBreaker}
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
-                {resettingBreaker ? 'Resetting...' : 'Reset breaker'}
+                {resettingBreaker ? (lang === 'zh' ? '重置中...' : 'Resetting...') : (lang === 'zh' ? '重置熔断器' : 'Reset breaker')}
               </button>
-              <span className="text-xs text-gray-500">Test succeeded. You can manually restore this provider to service.</span>
+              <span className="text-xs text-gray-500">{lang === 'zh' ? '测试已成功，可以手动将该供应商恢复到服务状态。' : 'Test succeeded. You can manually restore this provider to service.'}</span>
             </div>
           )}
 
           {directResult.revisedPrompt !== directResult.prompt && (
             <div>
-              <h4 className="mb-2 text-sm font-medium text-gray-900">Revised Prompt</h4>
+              <h4 className="mb-2 text-sm font-medium text-gray-900">{lang === 'zh' ? '修订后的提示词' : 'Revised Prompt'}</h4>
               <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 whitespace-pre-wrap">
                 {directResult.revisedPrompt}
               </div>
@@ -793,11 +808,11 @@ export default function AdminTestImagePage() {
           )}
 
           <div>
-            <h4 className="mb-2 text-sm font-medium text-gray-900">Generated Image</h4>
+            <h4 className="mb-2 text-sm font-medium text-gray-900">{lang === 'zh' ? '生成结果' : 'Generated Image'}</h4>
             <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 inline-block">
               <img
                 src={`data:${directResult.mimeType};base64,${directResult.imageBase64}`}
-                alt="Direct provider test result"
+                alt={lang === 'zh' ? '直连供应商测试结果' : 'Direct provider test result'}
                 className="max-h-[32rem] max-w-full object-contain"
               />
             </div>

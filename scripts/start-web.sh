@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-echo "[startup] Syncing database schema..."
-npx prisma db push --accept-data-loss --schema prisma/schema.prisma 2>&1 || {
-  echo "[startup] WARNING: Database push failed, tables may not exist yet"
+echo "[startup] Applying database migrations..."
+npx prisma migrate deploy --schema prisma/schema.prisma 2>&1 || {
+  echo "[startup] WARNING: Database migration failed, schema may be outdated"
 }
 
 # Start the appropriate service

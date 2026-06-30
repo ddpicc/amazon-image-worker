@@ -2,6 +2,30 @@ import { PaymentOrderStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db/prisma'
 import { createAuditLog } from '@/lib/audit-log'
 
+type PendingPaymentOrder = {
+  id: string
+  packageId: string | null
+  outTradeNo: string
+  amountFen: number
+  creditFen: number
+  currency: string
+  payType: string | null
+  provider: string | null
+  providerOrderId: string | null
+  payUrl: string
+  payUrl2: string
+  qrcodeUrl: string
+  qrcodeImg: string
+  createdAt: Date
+  topupPackage: {
+    id: string
+    name: string
+    priceFen: number
+    creditFen: number
+    bonusFen: number
+  } | null
+}
+
 function toNullableJsonValue(value: unknown) {
   if (value === undefined) return undefined
   if (value === null) return Prisma.JsonNull
@@ -80,41 +104,75 @@ export async function updateTopupPackage(params: {
 
 export async function createPendingPaymentOrder(params: {
   userId: string
-  packageId: string
+  packageId?: string
+  amountFen?: number
   outTradeNo: string
   payType: string
   provider: string
-}) {
-  const pkg = await prisma.topupPackage.findFirst({
-    where: {
-      id: params.packageId,
-      enabled: true,
-    },
-  })
+}): Promise<PendingPaymentOrder> {
+  if (params.packageId) {
+    const pkg = await prisma.topupPackage.findFirst({
+      where: {
+        id: params.packageId,
+        enabled: true,
+      },
+    })
 
-  if (!pkg) {
-    throw new Error('充值套餐不存在或已下架')
+    if (!pkg) {
+      throw new Error('充值套餐不存在或已下架')
+    }
+
+    return prisma.paymentOrder.create({
+      data: {
+        userId: params.userId,
+        packageId: pkg.id,
+        outTradeNo: params.outTradeNo,
+        payType: params.payType,
+        provider: params.provider,
+        amountFen: pkg.priceFen,
+        creditFen: pkg.creditFen + pkg.bonusFen,
+        metadata: {
+          packageName: pkg.name,
+          baseCreditFen: pkg.creditFen,
+          bonusFen: pkg.bonusFen,
+        },
+      } as unknown as Prisma.PaymentOrderUncheckedCreateInput,
+      include: {
+        topupPackage: true,
+      },
+    }) as unknown as PendingPaymentOrder
   }
+
+  if (typeof params.amountFen !== 'number' || !Number.isInteger(params.amountFen) || params.amountFen <= 0) {
+    throw new Error('充值金额不合法')
+  }
+
+  const amountFen = params.amountFen
 
   return prisma.paymentOrder.create({
     data: {
       userId: params.userId,
-      packageId: pkg.id,
+      packageId: null as unknown as string,
       outTradeNo: params.outTradeNo,
+      status: PaymentOrderStatus.PENDING,
+      amountFen,
+      creditFen: amountFen,
+      currency: 'CNY',
       payType: params.payType,
       provider: params.provider,
-      amountFen: pkg.priceFen,
-      creditFen: pkg.creditFen + pkg.bonusFen,
+      payUrl: '',
+      payUrl2: '',
+      qrcodeUrl: '',
+      qrcodeImg: '',
       metadata: {
-        packageName: pkg.name,
-        baseCreditFen: pkg.creditFen,
-        bonusFen: pkg.bonusFen,
+        source: 'custom_topup',
+        displayName: '自由充值',
       },
-    },
+    } as Prisma.PaymentOrderUncheckedCreateInput,
     include: {
       topupPackage: true,
     },
-  })
+  }) as unknown as PendingPaymentOrder
 }
 
 export async function updatePaymentOrderAfterCreate(params: {

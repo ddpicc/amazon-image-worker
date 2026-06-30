@@ -7,12 +7,13 @@ import {
   updatePaymentOrderAfterCreate,
 } from '@/lib/payments/payment-order-service'
 import { buildZPaySign, getZPayConfig, normalizeMoneyFromFen, parseZPayCode } from '@/lib/payments/zpay'
-import { fenToYuan } from '@/lib/money'
+import { fenToYuan, parseYuanToFen } from '@/lib/money'
 import { getClientIp } from '@/lib/rate-limit'
 import { createAuditLog } from '@/lib/audit-log'
 
 type CreateOrderBody = {
   packageId?: string
+  amountYuan?: string
 }
 
 type ZPayCreateResponse = {
@@ -74,22 +75,36 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json().catch(() => ({}))) as CreateOrderBody
-    const packageId = typeof body.packageId === 'string' ? body.packageId : ''
-    if (!packageId) {
-      return NextResponse.json({ error: '请选择充值套餐' }, { status: 400 })
+    const packageId = typeof body.packageId === 'string' ? body.packageId.trim() : ''
+    const amountYuan = typeof body.amountYuan === 'string' ? body.amountYuan.trim() : ''
+
+    if (packageId && amountYuan) {
+      return NextResponse.json({ error: '请只选择套餐充值或自由充值其中一种方式' }, { status: 400 })
+    }
+
+    if (!packageId && !amountYuan) {
+      return NextResponse.json({ error: '请选择充值套餐或输入充值金额' }, { status: 400 })
     }
 
     const outTradeNo = makeOutTradeNo()
-    const localOrder = await createPendingPaymentOrder({
-      userId: result.auth.userId,
-      packageId,
-      outTradeNo,
-      payType: 'wxpay',
-      provider: 'zpay',
-    })
+    const localOrder = packageId
+      ? await createPendingPaymentOrder({
+          userId: result.auth.userId,
+          packageId,
+          outTradeNo,
+          payType: 'wxpay',
+          provider: 'zpay',
+        })
+      : await createPendingPaymentOrder({
+          userId: result.auth.userId,
+          amountFen: parseYuanToFen(amountYuan),
+          outTradeNo,
+          payType: 'wxpay',
+          provider: 'zpay',
+        })
 
     const money = normalizeMoneyFromFen(localOrder.amountFen)
-    const productName = process.env.ZPAY_PRODUCT_NAME?.trim() || `${localOrder.topupPackage.name}`
+    const productName = process.env.ZPAY_PRODUCT_NAME?.trim() || localOrder.topupPackage?.name || '自由充值'
     const origin = (process.env.APP_BASE_URL?.trim() || request.nextUrl.origin).replace(/\/+$/, '')
     const notifyUrl = process.env.ZPAY_NOTIFY_URL?.trim() || `${origin}/api/v1/payments/orders/notify`
     const { pid, key, gateway } = getZPayConfig()
@@ -143,7 +158,8 @@ export async function POST(request: NextRequest) {
       qrcodeUrl: typeof data.qrcode === 'string' ? data.qrcode : '',
       qrcodeImg: typeof data.img === 'string' ? data.img : '',
       metadata: {
-        packageName: localOrder.topupPackage.name,
+        packageName: localOrder.topupPackage?.name || '自由充值',
+        ...(localOrder.packageId ? { packageId: localOrder.packageId } : { source: 'custom_topup' }),
         zpayPayload: data,
       },
     })
@@ -157,7 +173,8 @@ export async function POST(request: NextRequest) {
       ip: getClientIp(request),
       metadata: {
         outTradeNo,
-        packageId,
+        packageId: localOrder.packageId,
+        source: localOrder.packageId ? 'package_topup' : 'custom_topup',
         amountFen: order.amountFen,
         providerOrderId: order.providerOrderId,
       },
@@ -186,14 +203,16 @@ export async function POST(request: NextRequest) {
       img: order.qrcodeImg,
       providerOrderId: order.providerOrderId,
       createdAt: order.createdAt,
-      topupPackage: {
-        id: localOrder.topupPackage.id,
-        name: localOrder.topupPackage.name,
-        priceFen: localOrder.topupPackage.priceFen,
-        price: fenToYuan(localOrder.topupPackage.priceFen),
-        creditFen: localOrder.topupPackage.creditFen,
-        bonusFen: localOrder.topupPackage.bonusFen,
-      },
+      topupPackage: localOrder.topupPackage
+        ? {
+            id: localOrder.topupPackage.id,
+            name: localOrder.topupPackage.name,
+            priceFen: localOrder.topupPackage.priceFen,
+            price: fenToYuan(localOrder.topupPackage.priceFen),
+            creditFen: localOrder.topupPackage.creditFen,
+            bonusFen: localOrder.topupPackage.bonusFen,
+          }
+        : null,
     })
   } catch (error) {
     return NextResponse.json(

@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchCurrentUser, type DashboardUser } from '@/lib/dashboard/auth'
+import { roleLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
 
 export default function AccountPage() {
   const router = useRouter()
+  const { lang, t } = useDashboardI18n()
   const [user, setUser] = useState<DashboardUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [profileForm, setProfileForm] = useState({ name: '' })
@@ -40,11 +42,11 @@ export default function AccountPage() {
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(body.error || 'Failed to update profile')
+        setError(body.error || (lang === 'zh' ? '更新资料失败' : 'Failed to update profile'))
         return
       }
       setUser(body.user)
-      setMessage('Profile updated successfully')
+      setMessage(lang === 'zh' ? '资料已更新' : 'Profile updated successfully')
     } finally {
       setProfileSubmitting(false)
     }
@@ -56,11 +58,11 @@ export default function AccountPage() {
     setError('')
 
     if (passwordForm.newPassword.length < 8) {
-      setError('New password must be at least 8 characters')
+      setError(lang === 'zh' ? '新密码至少需要 8 个字符' : 'New password must be at least 8 characters')
       return
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setError('Password confirmation does not match')
+      setError(lang === 'zh' ? '两次输入的新密码不一致' : 'Password confirmation does not match')
       return
     }
 
@@ -76,74 +78,74 @@ export default function AccountPage() {
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(body.error || 'Failed to change password')
+        setError(body.error || (lang === 'zh' ? '修改密码失败' : 'Failed to change password'))
         return
       }
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
-      setMessage('Password updated successfully')
+      setMessage(lang === 'zh' ? '密码已更新' : 'Password updated successfully')
     } finally {
       setPasswordSubmitting(false)
     }
   }
 
   if (loading || !user) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading account...</div></div>
+    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">{lang === 'zh' ? '正在加载账号信息...' : 'Loading account...'}</div></div>
   }
 
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Account</h2>
-        <p className="text-sm text-gray-500 mt-1">Manage your profile and password</p>
+        <h2 className="text-2xl font-bold text-gray-900">{t('navAccount')}</h2>
+        <p className="text-sm text-gray-500 mt-1">{lang === 'zh' ? '管理你的个人资料和密码' : 'Manage your profile and password'}</p>
       </div>
 
       {message && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">{message}</div>}
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</div>}
 
       <div className="rounded-lg shadow-sm border border-gray-200 bg-white p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Balance</h3>
-        <p className="text-sm text-gray-500 mb-4">Your available prepaid balance for billed image generation</p>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">{lang === 'zh' ? '余额' : 'Balance'}</h3>
+        <p className="text-sm text-gray-500 mb-4">{lang === 'zh' ? '你可用于计费生图的预充值余额' : 'Your available prepaid balance for billed image generation'}</p>
         <div className="text-3xl font-bold text-gray-900">¥{(user.balance ?? 0).toFixed(2)}</div>
       </div>
 
       <div className="rounded-lg shadow-sm border border-gray-200 bg-white p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Profile</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{lang === 'zh' ? '个人资料' : 'Profile'}</h3>
         <form onSubmit={saveProfile} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
             <input value={user.email} disabled className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-gray-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input value={profileForm.name} onChange={(e) => setProfileForm({ name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Your name" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('name')}</label>
+            <input value={profileForm.name} onChange={(e) => setProfileForm({ name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder={t('yourName')} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-            <input value={user.role} disabled className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-gray-500" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '角色' : 'Role'}</label>
+            <input value={roleLabel(lang, user.role)} disabled className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-gray-500" />
           </div>
           <button type="submit" disabled={profileSubmitting} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            {profileSubmitting ? 'Saving...' : 'Save Profile'}
+            {profileSubmitting ? t('saving') : (lang === 'zh' ? '保存资料' : 'Save Profile')}
           </button>
         </form>
       </div>
 
       <div className="rounded-lg shadow-sm border border-gray-200 bg-white p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{lang === 'zh' ? '修改密码' : 'Change Password'}</h3>
         <form onSubmit={changePassword} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '当前密码' : 'Current Password'}</label>
             <input type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '新密码' : 'New Password'}</label>
             <input type="password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '确认新密码' : 'Confirm New Password'}</label>
             <input type="password" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required />
           </div>
           <button type="submit" disabled={passwordSubmitting} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            {passwordSubmitting ? 'Updating...' : 'Change Password'}
+            {passwordSubmitting ? (lang === 'zh' ? '更新中...' : 'Updating...') : (lang === 'zh' ? '修改密码' : 'Change Password')}
           </button>
         </form>
       </div>

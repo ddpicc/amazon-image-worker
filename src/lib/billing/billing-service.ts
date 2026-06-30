@@ -108,7 +108,6 @@ export async function getUserBalance(userId: string): Promise<number> {
 
 export interface UsageRecord {
   id: string
-  prompt: string
   size: string | null
   pricingSku: string | null
   unitPrice: number | null
@@ -125,6 +124,7 @@ export interface UsageRecord {
   apiKeyName: string
   ownerUserId: string
   ownerEmail: string
+  prompt?: string
 }
 
 export interface UsageHistoryResult {
@@ -141,10 +141,11 @@ export async function getUsageHistory(params: {
   from?: Date
   to?: Date
   costOnly?: boolean
+  includePrompt?: boolean
   page: number
   limit: number
 }): Promise<UsageHistoryResult> {
-  const { userId, apiKeyId, from, to, costOnly = true, page, limit } = params
+  const { userId, apiKeyId, from, to, costOnly = true, includePrompt = false, page, limit } = params
   const where: Record<string, unknown> = {}
 
   if (costOnly) {
@@ -174,7 +175,7 @@ export async function getUsageHistory(params: {
       take: limit,
       select: {
         id: true,
-        prompt: true,
+        ...(includePrompt ? { prompt: true } : {}),
         size: true,
         pricingSku: true,
         unitPriceFen: true,
@@ -201,7 +202,6 @@ export async function getUsageHistory(params: {
   return {
     records: records.map((r) => ({
       id: r.id,
-      prompt: r.prompt,
       size: r.size,
       pricingSku: r.pricingSku,
       unitPriceFen: r.unitPriceFen,
@@ -218,6 +218,7 @@ export async function getUsageHistory(params: {
       apiKeyName: r.apiKey.name,
       ownerUserId: r.apiKey.ownerUserId ?? '',
       ownerEmail: r.apiKey.ownerUser?.email ?? '',
+      ...(r as { prompt?: string }).prompt !== undefined ? { prompt: (r as { prompt?: string }).prompt } : {},
     })),
     total,
     page,

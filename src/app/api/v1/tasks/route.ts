@@ -44,9 +44,9 @@ export async function GET(request: NextRequest) {
         take: limit,
         select: {
           id: true,
-          prompt: true,
+          ...(isAdmin ? { prompt: true } : {}),
           status: true,
-          selectedProviderName: true,
+          ...(isAdmin ? { selectedProviderName: true } : {}),
           durationMs: true,
           createdAt: true,
           errorMessage: isAdmin,

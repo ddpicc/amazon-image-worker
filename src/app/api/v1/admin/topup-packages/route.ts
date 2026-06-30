@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
         price: fenToYuan(item.priceFen),
         credit: fenToYuan(item.creditFen),
         bonus: fenToYuan(item.bonusFen),
+        totalCredit: fenToYuan(item.creditFen + item.bonusFen),
       })),
     })
   } catch (error) {
@@ -64,6 +65,7 @@ export async function POST(request: NextRequest) {
         price: fenToYuan(item.priceFen),
         credit: fenToYuan(item.creditFen),
         bonus: fenToYuan(item.bonusFen),
+        totalCredit: fenToYuan(item.creditFen + item.bonusFen),
       })),
     })
   } catch (error) {

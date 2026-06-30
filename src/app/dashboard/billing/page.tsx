@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { paymentStatusLabel, roleLabel, taskStatusLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
 
 interface UserRow {
   id: string
@@ -27,6 +28,7 @@ interface UsageRow {
 }
 
 export default function BillingPage() {
+  const { lang, t } = useDashboardI18n()
   const [users, setUsers] = useState<UserRow[]>([])
   const [usage, setUsage] = useState<UsageRow[]>([])
   const [activeTab, setActiveTab] = useState<'balances' | 'usage'>('balances')
@@ -45,7 +47,7 @@ export default function BillingPage() {
       const res = await fetch('/api/v1/admin/users', { cache: 'no-store' })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(body.error || 'Failed to load users')
+        setError(body.error || (lang === 'zh' ? '加载用户失败' : 'Failed to load users'))
         return
       }
       setUsers(body.users || [])
@@ -60,7 +62,7 @@ export default function BillingPage() {
       const res = await fetch('/api/v1/admin/usage?limit=100', { cache: 'no-store' })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(body.error || 'Failed to load usage')
+        setError(body.error || (lang === 'zh' ? '加载用量失败' : 'Failed to load usage'))
         return
       }
       setUsage(body.records || [])
@@ -85,13 +87,13 @@ export default function BillingPage() {
     setError('')
 
     if (!selectedUserId) {
-      setError('Please select a user')
+      setError(lang === 'zh' ? '请选择一个用户' : 'Please select a user')
       return
     }
 
     const numericAmount = Number(amount)
     if (!numericAmount || Number.isNaN(numericAmount)) {
-      setError('Please enter a non-zero amount')
+      setError(lang === 'zh' ? '请输入非零金额' : 'Please enter a non-zero amount')
       return
     }
 
@@ -104,10 +106,10 @@ export default function BillingPage() {
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(body.error || 'Failed to adjust balance')
+        setError(body.error || (lang === 'zh' ? '调整余额失败' : 'Failed to adjust balance'))
         return
       }
-      setMessage(`Balance updated. New balance: ¥${body.newBalance.toFixed(2)}`)
+      setMessage(lang === 'zh' ? `余额已更新。新余额：¥${body.newBalance.toFixed(2)}` : `Balance updated. New balance: ¥${body.newBalance.toFixed(2)}`)
       setAmount('')
       setReason('')
       await loadUsers()
@@ -120,8 +122,8 @@ export default function BillingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Billing</h2>
-        <p className="text-sm text-gray-500 mt-1">Manage user balances and review billed image generation usage</p>
+        <h2 className="text-2xl font-bold text-gray-900">{t('navBilling')}</h2>
+        <p className="text-sm text-gray-500 mt-1">{lang === 'zh' ? '管理用户余额并查看计费用量' : 'Manage user balances and review billed image generation usage'}</p>
       </div>
 
       {message && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">{message}</div>}
@@ -132,13 +134,13 @@ export default function BillingPage() {
           onClick={() => setActiveTab('balances')}
           className={`px-4 py-2 rounded-md text-sm ${activeTab === 'balances' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700'}`}
         >
-          User Balances
+          {lang === 'zh' ? '用户余额' : 'User Balances'}
         </button>
         <button
           onClick={() => setActiveTab('usage')}
           className={`px-4 py-2 rounded-md text-sm ${activeTab === 'usage' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700'}`}
         >
-          Usage Report
+          {lang === 'zh' ? '用量报表' : 'Usage Report'}
         </button>
       </div>
 
@@ -146,17 +148,17 @@ export default function BillingPage() {
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100">
-              <h3 className="font-semibold text-gray-900">Users</h3>
+              <h3 className="font-semibold text-gray-900">{t('navUsers')}</h3>
             </div>
             {loadingUsers ? (
-              <div className="p-4 text-gray-500">Loading users...</div>
+              <div className="p-4 text-gray-500">{lang === 'zh' ? '正在加载用户...' : 'Loading users...'}</div>
             ) : (
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 text-gray-700">
                   <tr>
-                    <th className="px-4 py-3 text-left font-medium">Email</th>
-                    <th className="px-4 py-3 text-left font-medium">Role</th>
-                    <th className="px-4 py-3 text-left font-medium">Balance</th>
+                    <th className="px-4 py-3 text-left font-medium">{t('email')}</th>
+                    <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '角色' : 'Role'}</th>
+                    <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '余额' : 'Balance'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -170,7 +172,7 @@ export default function BillingPage() {
                         <div className="font-medium text-gray-900">{user.email}</div>
                         {user.name ? <div className="text-xs text-gray-500">{user.name}</div> : null}
                       </td>
-                      <td className="px-4 py-3 text-gray-700">{user.role}</td>
+                      <td className="px-4 py-3 text-gray-700">{roleLabel(lang, user.role)}</td>
                       <td className="px-4 py-3 font-medium text-gray-900">¥{user.balance.toFixed(2)}</td>
                     </tr>
                   ))}
@@ -180,35 +182,35 @@ export default function BillingPage() {
           </div>
 
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Adjust Balance</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">{lang === 'zh' ? '调整余额' : 'Adjust Balance'}</h3>
             <form onSubmit={submitAdjustment} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Selected User</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '已选用户' : 'Selected User'}</label>
                 <input
-                  value={selectedUser ? `${selectedUser.email} (${selectedUser.role})` : ''}
+                  value={selectedUser ? `${selectedUser.email} (${roleLabel(lang, selectedUser.role)})` : ''}
                   disabled
                   className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-gray-500"
-                  placeholder="Select a user from the table"
+                  placeholder={lang === 'zh' ? '从左侧表格选择用户' : 'Select a user from the table'}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('amount')}</label>
                 <input
                   type="number"
                   step="0.0001"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  placeholder="Positive = credit, negative = debit"
+                  placeholder={lang === 'zh' ? '正数为充值，负数为扣减' : 'Positive = credit, negative = debit'}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '原因' : 'Reason'}</label>
                 <input
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  placeholder="Optional note"
+                  placeholder={lang === 'zh' ? '可选备注' : 'Optional note'}
                 />
               </div>
               <button
@@ -216,7 +218,7 @@ export default function BillingPage() {
                 disabled={adjusting}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
-                {adjusting ? 'Updating...' : 'Update Balance'}
+                {adjusting ? (lang === 'zh' ? '更新中...' : 'Updating...') : (lang === 'zh' ? '更新余额' : 'Update Balance')}
               </button>
             </form>
           </div>
@@ -224,23 +226,23 @@ export default function BillingPage() {
       ) : (
         <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900">Usage Report</h3>
+            <h3 className="font-semibold text-gray-900">{lang === 'zh' ? '用量报表' : 'Usage Report'}</h3>
           </div>
           {loadingUsage ? (
-            <div className="p-4 text-gray-500">Loading usage...</div>
+            <div className="p-4 text-gray-500">{lang === 'zh' ? '正在加载用量...' : 'Loading usage...'}</div>
           ) : (
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-700">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium">Time</th>
-                  <th className="px-4 py-3 text-left font-medium">User</th>
-                  <th className="px-4 py-3 text-left font-medium">API Key</th>
-                  <th className="px-4 py-3 text-left font-medium">Size</th>
+                  <th className="px-4 py-3 text-left font-medium">{t('time')}</th>
+                  <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '用户' : 'User'}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t('apiKey')}</th>
+                  <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '尺寸' : 'Size'}</th>
                   <th className="px-4 py-3 text-left font-medium">SKU</th>
-                  <th className="px-4 py-3 text-left font-medium">Unit Price</th>
-                  <th className="px-4 py-3 text-left font-medium">Cost</th>
-                  <th className="px-4 py-3 text-left font-medium">Cost Status</th>
-                  <th className="px-4 py-3 text-left font-medium">Task Status</th>
+                  <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '单价' : 'Unit Price'}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t('cost')}</th>
+                  <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '费用状态' : 'Cost Status'}</th>
+                  <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '任务状态' : 'Task Status'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -253,8 +255,8 @@ export default function BillingPage() {
                     <td className="px-4 py-3 text-gray-700">{row.pricingSku || '-'}{row.priceVersion ? ` v${row.priceVersion}` : ''}</td>
                     <td className="px-4 py-3 text-gray-900">{row.unitPrice !== null ? `¥${row.unitPrice.toFixed(2)}` : '-'}</td>
                     <td className="px-4 py-3 text-gray-900">{row.cost !== null ? `¥${row.cost.toFixed(2)}` : '-'}</td>
-                    <td className="px-4 py-3 text-gray-700">{row.costStatus || '-'}</td>
-                    <td className="px-4 py-3 text-gray-700">{row.status}</td>
+                    <td className="px-4 py-3 text-gray-700">{row.costStatus ? paymentStatusLabel(lang, row.costStatus) : '-'}</td>
+                    <td className="px-4 py-3 text-gray-700">{taskStatusLabel(lang, row.status as 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED')}</td>
                   </tr>
                 ))}
               </tbody>

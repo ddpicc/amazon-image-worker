@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchCurrentUser, type DashboardUser } from '@/lib/dashboard/auth'
 import { Plus, X, Copy, Trash2, Check, Pencil, RotateCcw, Power, PowerOff } from 'lucide-react'
+import { roleLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
 
 interface ApiKeyData {
   id: string
@@ -73,6 +74,7 @@ const btnSecondary = 'px-4 py-1.5 text-sm text-gray-600 bg-gray-100 rounded hove
 
 export default function SettingsPage() {
   const router = useRouter()
+  const { lang, t } = useDashboardI18n()
   const [user, setUser] = useState<DashboardUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [apiKeys, setApiKeys] = useState<ApiKeyData[]>([])
@@ -163,7 +165,7 @@ export default function SettingsPage() {
         if (user) await fetchAll(user)
       } else {
         const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to create key')
+        alert(body.error || (lang === 'zh' ? '创建密钥失败' : 'Failed to create key'))
       }
     } finally {
       setSubmitting(false)
@@ -171,7 +173,7 @@ export default function SettingsPage() {
   }
 
   async function revokeKey(id: string, name: string) {
-    if (!confirm(`Revoke API key "${name}"? This cannot be undone.`)) return
+    if (!confirm(lang === 'zh' ? `确认撤销 API 密钥“${name}”吗？此操作无法撤销。` : `Revoke API key "${name}"? This cannot be undone.`)) return
     const res = await fetch(`/api/v1/api-keys/${id}`, { method: 'DELETE' })
     if (res.ok && user) {
       await fetchAll(user)
@@ -190,7 +192,7 @@ export default function SettingsPage() {
         await fetchAll(user)
       } else {
         const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to update key status')
+        alert(body.error || (lang === 'zh' ? '更新密钥状态失败' : 'Failed to update key status'))
       }
     } finally {
       setKeyActionLoading(null)
@@ -218,7 +220,7 @@ export default function SettingsPage() {
         await fetchAll(user)
       } else {
         const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to rename key')
+        alert(body.error || (lang === 'zh' ? '重命名密钥失败' : 'Failed to rename key'))
       }
     } finally {
       setSubmitting(false)
@@ -226,7 +228,7 @@ export default function SettingsPage() {
   }
 
   async function rotateKey(key: ApiKeyData) {
-    if (!confirm(`Rotate API key "${key.name}"? The current key will stop working immediately.`)) return
+    if (!confirm(lang === 'zh' ? `确认轮转 API 密钥“${key.name}”吗？当前密钥会立即失效。` : `Rotate API key "${key.name}"? The current key will stop working immediately.`)) return
     setKeyActionLoading(key.id)
     try {
       const res = await fetch(`/api/v1/api-keys/${key.id}/rotate`, { method: 'POST' })
@@ -235,7 +237,7 @@ export default function SettingsPage() {
         setCreatedKey(body.apiKey ?? '')
         if (user) await fetchAll(user)
       } else {
-        alert(body.error || 'Failed to rotate key')
+        alert(body.error || (lang === 'zh' ? '轮转密钥失败' : 'Failed to rotate key'))
       }
     } finally {
       setKeyActionLoading(null)
@@ -270,7 +272,7 @@ export default function SettingsPage() {
         await fetchAll(user)
       }
     } catch {
-      alert('Invalid threshold JSON')
+      alert(lang === 'zh' ? 'Threshold JSON 无效' : 'Invalid threshold JSON')
     } finally {
       setSubmitting(false)
     }
@@ -296,26 +298,41 @@ export default function SettingsPage() {
     return true
   })
 
-  if (loading || !user) return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading settings...</div></div>
+  const conditionLabel = (value: string) => {
+    switch (value) {
+      case 'CIRCUIT_BREAKER':
+        return lang === 'zh' ? '熔断触发' : 'Circuit Breaker'
+      case 'FAILURE_RATE':
+        return lang === 'zh' ? '失败率' : 'Failure Rate'
+      case 'LATENCY_THRESHOLD':
+        return lang === 'zh' ? '延迟阈值' : 'Latency Threshold'
+      case 'PROVIDER_DOWN':
+        return lang === 'zh' ? '供应商不可用' : 'Provider Down'
+      default:
+        return value
+    }
+  }
+
+  if (loading || !user) return <div className="flex items-center justify-center h-64"><div className="text-gray-500">{lang === 'zh' ? '正在加载设置...' : 'Loading settings...'}</div></div>
 
   const tabs = user.role === 'ADMIN'
-    ? ([['keys', 'API Keys'], ['rules', 'Alert Rules'], ['events', 'Alert Events']] as const)
-    : ([['keys', 'API Keys']] as const)
+    ? ([['keys', lang === 'zh' ? 'API 密钥' : 'API Keys'], ['rules', lang === 'zh' ? '告警规则' : 'Alert Rules'], ['events', lang === 'zh' ? '告警事件' : 'Alert Events']] as const)
+    : ([['keys', lang === 'zh' ? 'API 密钥' : 'API Keys']] as const)
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">{user.role === 'ADMIN' ? 'Management' : 'API Keys'}</h2>
+      <h2 className="text-2xl font-bold text-gray-900 mb-6">{user.role === 'ADMIN' ? t('navManagement') : t('navApiKeys')}</h2>
 
       {createdKey && (
         <div className="mb-6 rounded-lg shadow-sm border border-green-200 bg-green-50 p-4">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-semibold text-green-900">API Key Created</h4>
+            <h4 className="text-sm font-semibold text-green-900">{lang === 'zh' ? 'API 密钥已创建' : 'API Key Created'}</h4>
             <button onClick={() => setCreatedKey(null)} className="text-green-600 hover:text-green-800"><X className="w-4 h-4" /></button>
           </div>
-          <p className="text-xs text-green-700 mb-2">Copy this key now. It will not be shown again.</p>
+          <p className="text-xs text-green-700 mb-2">{lang === 'zh' ? '请立即复制该密钥，之后不会再次展示。' : 'Copy this key now. It will not be shown again.'}</p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-white border border-green-300 rounded px-3 py-2 text-sm font-mono text-gray-900 break-all">{createdKey}</code>
-            <button onClick={() => copyKey(createdKey)} className="p-2 bg-white border border-green-300 rounded hover:bg-green-100 text-green-700 shrink-0" title="Copy">{copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</button>
+            <button onClick={() => copyKey(createdKey)} className="p-2 bg-white border border-green-300 rounded hover:bg-green-100 text-green-700 shrink-0" title={lang === 'zh' ? '复制' : 'Copy'}>{copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</button>
           </div>
         </div>
       )}
@@ -330,7 +347,7 @@ export default function SettingsPage() {
         <div>
           {user.role !== 'ADMIN' && (
             <div className="flex items-center justify-end mb-4">
-              <button onClick={() => setShowCreateKey(true)} className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"><Plus className="w-4 h-4" />Create Key</button>
+              <button onClick={() => setShowCreateKey(true)} className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"><Plus className="w-4 h-4" />{lang === 'zh' ? '创建密钥' : 'Create Key'}</button>
             </div>
           )}
           <div className="rounded-lg shadow-sm border border-gray-200 bg-white overflow-hidden">
@@ -338,46 +355,46 @@ export default function SettingsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-left text-gray-500">
-                    <th className="px-4 py-2.5 font-medium">Name</th>
-                    {user.role === 'ADMIN' && <th className="px-4 py-2.5 font-medium">Owner</th>}
-                    <th className="px-4 py-2.5 font-medium">Prefix</th>
-                    <th className="px-4 py-2.5 font-medium">Enabled</th>
-                    <th className="px-4 py-2.5 font-medium">Daily Limit</th>
-                    <th className="px-4 py-2.5 font-medium">Monthly Limit</th>
-                    <th className="px-4 py-2.5 font-medium">Daily Used</th>
-                    <th className="px-4 py-2.5 font-medium">Monthly Used</th>
-                    <th className="px-4 py-2.5 font-medium">Created</th>
-                    <th className="px-4 py-2.5 font-medium">Actions</th>
+                    <th className="px-4 py-2.5 font-medium">{t('name')}</th>
+                    {user.role === 'ADMIN' && <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '归属用户' : 'Owner'}</th>}
+                    <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '前缀' : 'Prefix'}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('enabled')}</th>
+                    <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '日限额' : 'Daily Limit'}</th>
+                    <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '月限额' : 'Monthly Limit'}</th>
+                    <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '日已用' : 'Daily Used'}</th>
+                    <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '月已用' : 'Monthly Used'}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('created')}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {apiKeys.length === 0 ? <tr><td colSpan={user.role === 'ADMIN' ? 10 : 9} className="px-4 py-8 text-center text-gray-400">No API keys</td></tr> : apiKeys.map((k, i) => (
+                  {apiKeys.length === 0 ? <tr><td colSpan={user.role === 'ADMIN' ? 10 : 9} className="px-4 py-8 text-center text-gray-400">{lang === 'zh' ? '没有 API 密钥' : 'No API keys'}</td></tr> : apiKeys.map((k, i) => (
                     <tr key={k.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}>
                       <td className="px-4 py-2.5 font-medium text-gray-900">{k.name}</td>
                       {user.role === 'ADMIN' && <td className="px-4 py-2.5 text-gray-600">{k.ownerUser?.email || '-'}</td>}
                       <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{k.keyPrefix}...</td>
-                      <td className="px-4 py-2.5"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${k.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{k.enabled ? 'Enabled' : 'Disabled'}</span></td>
-                      <td className="px-4 py-2.5 text-gray-600">{k.quota?.dailyLimit ?? 'Unlimited'}</td>
-                      <td className="px-4 py-2.5 text-gray-600">{k.quota?.monthlyLimit ?? 'Unlimited'}</td>
+                      <td className="px-4 py-2.5"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${k.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{k.enabled ? t('enabled') : t('disabled')}</span></td>
+                      <td className="px-4 py-2.5 text-gray-600">{k.quota?.dailyLimit ?? (lang === 'zh' ? '无限制' : 'Unlimited')}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{k.quota?.monthlyLimit ?? (lang === 'zh' ? '无限制' : 'Unlimited')}</td>
                       <td className="px-4 py-2.5 text-gray-600">{k.quota?.dailyUsed ?? 0}</td>
                       <td className="px-4 py-2.5 text-gray-600">{k.quota?.monthlyUsed ?? 0}</td>
                       <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{new Date(k.createdAt).toLocaleString()}</td>
                       <td className="px-4 py-2.5">
                         {user.role === 'ADMIN' ? (
-                          <button onClick={() => revokeKey(k.id, k.name)} className="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-800"><Trash2 className="w-3.5 h-3.5" />Revoke</button>
+                          <button onClick={() => revokeKey(k.id, k.name)} className="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-800"><Trash2 className="w-3.5 h-3.5" />{lang === 'zh' ? '撤销' : 'Revoke'}</button>
                         ) : (
                           <div className="flex items-center gap-2">
                             <button onClick={() => toggleKeyEnabled(k)} disabled={keyActionLoading === k.id} className="inline-flex items-center gap-1 text-xs text-gray-700 hover:text-gray-900 disabled:opacity-50">
                               {k.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}
-                              {k.enabled ? 'Disable' : 'Enable'}
+                              {k.enabled ? (lang === 'zh' ? '禁用' : 'Disable') : (lang === 'zh' ? '启用' : 'Enable')}
                             </button>
                             <button onClick={() => openEditKey(k)} className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
-                              <Pencil className="w-3.5 h-3.5" />Rename
+                              <Pencil className="w-3.5 h-3.5" />{lang === 'zh' ? '重命名' : 'Rename'}
                             </button>
                             <button onClick={() => rotateKey(k)} disabled={keyActionLoading === k.id} className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50">
-                              <RotateCcw className="w-3.5 h-3.5" />Rotate
+                              <RotateCcw className="w-3.5 h-3.5" />{lang === 'zh' ? '轮转' : 'Rotate'}
                             </button>
-                            <button onClick={() => revokeKey(k.id, k.name)} className="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-800"><Trash2 className="w-3.5 h-3.5" />Revoke</button>
+                            <button onClick={() => revokeKey(k.id, k.name)} className="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-800"><Trash2 className="w-3.5 h-3.5" />{lang === 'zh' ? '撤销' : 'Revoke'}</button>
                           </div>
                         )}
                       </td>
@@ -392,51 +409,51 @@ export default function SettingsPage() {
 
       {user.role === 'ADMIN' && activeTab === 'rules' && (
         <div>
-          <div className="flex items-center justify-end mb-4"><button onClick={() => setShowAddRule(true)} className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"><Plus className="w-4 h-4" />Add Rule</button></div>
-          <div className="rounded-lg shadow-sm border border-gray-200 bg-white overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-gray-50 text-left text-gray-500"><th className="px-4 py-2.5 font-medium">Name</th><th className="px-4 py-2.5 font-medium">Condition</th><th className="px-4 py-2.5 font-medium">Provider</th><th className="px-4 py-2.5 font-medium">Webhook URL</th><th className="px-4 py-2.5 font-medium">Enabled</th><th className="px-4 py-2.5 font-medium">Last Triggered</th><th className="px-4 py-2.5 font-medium">Actions</th></tr></thead><tbody>{alertRules.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No alert rules</td></tr> : alertRules.map((r, i) => <tr key={r.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}><td className="px-4 py-2.5 font-medium text-gray-900">{r.name}</td><td className="px-4 py-2.5 text-gray-600">{r.conditionType}</td><td className="px-4 py-2.5 text-gray-600">{providers.find((p) => p.id === r.providerId)?.name || 'All'}</td><td className="px-4 py-2.5 text-gray-600 max-w-[200px] truncate">{r.webhookUrl}</td><td className="px-4 py-2.5"><button onClick={() => toggleRule(r)} className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${r.enabled ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}>{r.enabled ? 'Enabled' : 'Disabled'}</button></td><td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{r.lastTriggeredAt ? new Date(r.lastTriggeredAt).toLocaleString() : 'Never'}</td><td className="px-4 py-2.5"><button onClick={() => { if (!confirm(`Delete rule "${r.name}"?`)) return; fetch(`/api/v1/alerts/rules/${r.id}`, { method: 'DELETE' }).then((res) => { if (res.ok && user) fetchAll(user) }) }} className="text-red-600 hover:text-red-800"><Trash2 className="w-3.5 h-3.5" /></button></td></tr>)}</tbody></table></div></div>
+          <div className="flex items-center justify-end mb-4"><button onClick={() => setShowAddRule(true)} className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"><Plus className="w-4 h-4" />{lang === 'zh' ? '新增规则' : 'Add Rule'}</button></div>
+          <div className="rounded-lg shadow-sm border border-gray-200 bg-white overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-gray-50 text-left text-gray-500"><th className="px-4 py-2.5 font-medium">{t('name')}</th><th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '条件' : 'Condition'}</th><th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '供应商' : 'Provider'}</th><th className="px-4 py-2.5 font-medium">Webhook URL</th><th className="px-4 py-2.5 font-medium">{t('enabled')}</th><th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '最近触发' : 'Last Triggered'}</th><th className="px-4 py-2.5 font-medium">{t('actions')}</th></tr></thead><tbody>{alertRules.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'zh' ? '没有告警规则' : 'No alert rules'}</td></tr> : alertRules.map((r, i) => <tr key={r.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}><td className="px-4 py-2.5 font-medium text-gray-900">{r.name}</td><td className="px-4 py-2.5 text-gray-600">{conditionLabel(r.conditionType)}</td><td className="px-4 py-2.5 text-gray-600">{providers.find((p) => p.id === r.providerId)?.name || (lang === 'zh' ? '全部' : 'All')}</td><td className="px-4 py-2.5 text-gray-600 max-w-[200px] truncate">{r.webhookUrl}</td><td className="px-4 py-2.5"><button onClick={() => toggleRule(r)} className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${r.enabled ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}>{r.enabled ? t('enabled') : t('disabled')}</button></td><td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{r.lastTriggeredAt ? new Date(r.lastTriggeredAt).toLocaleString() : (lang === 'zh' ? '从未' : 'Never')}</td><td className="px-4 py-2.5"><button onClick={() => { if (!confirm(lang === 'zh' ? `确认删除规则“${r.name}”吗？` : `Delete rule "${r.name}"?`)) return; fetch(`/api/v1/alerts/rules/${r.id}`, { method: 'DELETE' }).then((res) => { if (res.ok && user) fetchAll(user) }) }} className="text-red-600 hover:text-red-800" title={lang === 'zh' ? '删除规则' : 'Delete rule'}><Trash2 className="w-3.5 h-3.5" /></button></td></tr>)}</tbody></table></div></div>
         </div>
       )}
 
       {user.role === 'ADMIN' && activeTab === 'events' && (
         <div>
-          <div className="flex items-center gap-2 mb-4">{([['all', 'All'], ['unacked', 'Unacknowledged'], ['acked', 'Acknowledged']] as const).map(([val, label]) => <button key={val} onClick={() => setEventsFilter(val)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${eventsFilter === val ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{label}</button>)}</div>
-          <div className="rounded-lg shadow-sm border border-gray-200 bg-white overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-gray-50 text-left text-gray-500"><th className="px-4 py-2.5 font-medium">Time</th><th className="px-4 py-2.5 font-medium">Rule</th><th className="px-4 py-2.5 font-medium">Provider</th><th className="px-4 py-2.5 font-medium">Message</th><th className="px-4 py-2.5 font-medium">Severity</th><th className="px-4 py-2.5 font-medium">Acknowledged</th><th className="px-4 py-2.5 font-medium">Actions</th></tr></thead><tbody>{filteredEvents.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No alert events</td></tr> : filteredEvents.map((ev, i) => <tr key={ev.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}><td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{new Date(ev.createdAt).toLocaleString()}</td><td className="px-4 py-2.5 text-gray-700">{ev.ruleName || ev.ruleId.slice(0, 8)}</td><td className="px-4 py-2.5 text-gray-600">{ev.providerName || ev.providerId?.slice(0, 8) || 'All'}</td><td className="px-4 py-2.5 text-gray-600 max-w-[300px] truncate">{ev.message}</td><td className="px-4 py-2.5"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${ev.severity === 'CRITICAL' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{ev.severity}</span></td><td className="px-4 py-2.5">{ev.acknowledged ? <span className="text-green-700 text-xs">Yes</span> : <span className="text-gray-400 text-xs">No</span>}</td><td className="px-4 py-2.5">{!ev.acknowledged && <button onClick={() => acknowledgeEvent(ev.id)} className="text-xs text-blue-600 hover:text-blue-800 font-medium">Acknowledge</button>}</td></tr>)}</tbody></table></div></div>
+          <div className="flex items-center gap-2 mb-4">{([['all', lang === 'zh' ? '全部' : 'All'], ['unacked', lang === 'zh' ? '未确认' : 'Unacknowledged'], ['acked', lang === 'zh' ? '已确认' : 'Acknowledged']] as const).map(([val, label]) => <button key={val} onClick={() => setEventsFilter(val)} className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${eventsFilter === val ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{label}</button>)}</div>
+          <div className="rounded-lg shadow-sm border border-gray-200 bg-white overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-gray-50 text-left text-gray-500"><th className="px-4 py-2.5 font-medium">{t('time')}</th><th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '规则' : 'Rule'}</th><th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '供应商' : 'Provider'}</th><th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '消息' : 'Message'}</th><th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '严重级别' : 'Severity'}</th><th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '已确认' : 'Acknowledged'}</th><th className="px-4 py-2.5 font-medium">{t('actions')}</th></tr></thead><tbody>{filteredEvents.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">{lang === 'zh' ? '没有告警事件' : 'No alert events'}</td></tr> : filteredEvents.map((ev, i) => <tr key={ev.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}><td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{new Date(ev.createdAt).toLocaleString()}</td><td className="px-4 py-2.5 text-gray-700">{ev.ruleName || ev.ruleId.slice(0, 8)}</td><td className="px-4 py-2.5 text-gray-600">{ev.providerName || ev.providerId?.slice(0, 8) || (lang === 'zh' ? '全部' : 'All')}</td><td className="px-4 py-2.5 text-gray-600 max-w-[300px] truncate">{ev.message}</td><td className="px-4 py-2.5"><span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${ev.severity === 'CRITICAL' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{ev.severity === 'CRITICAL' ? (lang === 'zh' ? '严重' : 'Critical') : (lang === 'zh' ? '警告' : 'Warning')}</span></td><td className="px-4 py-2.5">{ev.acknowledged ? <span className="text-green-700 text-xs">{lang === 'zh' ? '是' : 'Yes'}</span> : <span className="text-gray-400 text-xs">{lang === 'zh' ? '否' : 'No'}</span>}</td><td className="px-4 py-2.5">{!ev.acknowledged && <button onClick={() => acknowledgeEvent(ev.id)} className="text-xs text-blue-600 hover:text-blue-800 font-medium">{lang === 'zh' ? '确认' : 'Acknowledge'}</button>}</td></tr>)}</tbody></table></div></div>
         </div>
       )}
 
       {user.role !== 'ADMIN' && showCreateKey && (
-        <Modal title="Create API Key" onClose={() => setShowCreateKey(false)}>
+        <Modal title={lang === 'zh' ? '创建 API 密钥' : 'Create API Key'} onClose={() => setShowCreateKey(false)}>
           <form onSubmit={handleCreateKey} className="space-y-3">
-            <Field label="Name"><input type="text" value={keyForm.name} onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })} className={inputCls} required placeholder="e.g. Production App" /></Field>
+            <Field label={t('name')}><input type="text" value={keyForm.name} onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })} className={inputCls} required placeholder={lang === 'zh' ? '例如：生产环境应用' : 'e.g. Production App'} /></Field>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowCreateKey(false)} className={btnSecondary}>Cancel</button>
-              <button type="submit" disabled={submitting} className={btnPrimary}>{submitting ? 'Creating...' : 'Create'}</button>
+              <button type="button" onClick={() => setShowCreateKey(false)} className={btnSecondary}>{lang === 'zh' ? '取消' : 'Cancel'}</button>
+              <button type="submit" disabled={submitting} className={btnPrimary}>{submitting ? (lang === 'zh' ? '创建中...' : 'Creating...') : (lang === 'zh' ? '创建' : 'Create')}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {user.role !== 'ADMIN' && editKey && (
-        <Modal title="Rename API Key" onClose={() => setEditKey(null)}>
+        <Modal title={lang === 'zh' ? '重命名 API 密钥' : 'Rename API Key'} onClose={() => setEditKey(null)}>
           <form onSubmit={submitEditKey} className="space-y-3">
-            <Field label="Name"><input type="text" value={editKeyName} onChange={(e) => setEditKeyName(e.target.value)} className={inputCls} required /></Field>
+            <Field label={t('name')}><input type="text" value={editKeyName} onChange={(e) => setEditKeyName(e.target.value)} className={inputCls} required /></Field>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setEditKey(null)} className={btnSecondary}>Cancel</button>
-              <button type="submit" disabled={submitting} className={btnPrimary}>{submitting ? 'Saving...' : 'Save'}</button>
+              <button type="button" onClick={() => setEditKey(null)} className={btnSecondary}>{lang === 'zh' ? '取消' : 'Cancel'}</button>
+              <button type="submit" disabled={submitting} className={btnPrimary}>{submitting ? (lang === 'zh' ? '保存中...' : 'Saving...') : (lang === 'zh' ? '保存' : 'Save')}</button>
             </div>
           </form>
         </Modal>
       )}
 
       {user.role === 'ADMIN' && showAddRule && (
-        <Modal title="Add Alert Rule" onClose={() => setShowAddRule(false)}>
+        <Modal title={lang === 'zh' ? '新增告警规则' : 'Add Alert Rule'} onClose={() => setShowAddRule(false)}>
           <form onSubmit={handleAddRule} className="space-y-3">
-            <Field label="Name"><input type="text" value={ruleForm.name} onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })} className={inputCls} required /></Field>
-            <Field label="Condition Type"><select value={ruleForm.conditionType} onChange={(e) => setRuleForm({ ...ruleForm, conditionType: e.target.value })} className={inputCls}><option value="CIRCUIT_BREAKER">Circuit Breaker</option><option value="FAILURE_RATE">Failure Rate</option><option value="LATENCY_THRESHOLD">Latency Threshold</option><option value="PROVIDER_DOWN">Provider Down</option></select></Field>
-            <Field label="Provider (optional)"><select value={ruleForm.providerId} onChange={(e) => setRuleForm({ ...ruleForm, providerId: e.target.value })} className={inputCls}><option value="">All Providers</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+            <Field label={t('name')}><input type="text" value={ruleForm.name} onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })} className={inputCls} required /></Field>
+            <Field label={lang === 'zh' ? '条件类型' : 'Condition Type'}><select value={ruleForm.conditionType} onChange={(e) => setRuleForm({ ...ruleForm, conditionType: e.target.value })} className={inputCls}><option value="CIRCUIT_BREAKER">{lang === 'zh' ? '熔断触发' : 'Circuit Breaker'}</option><option value="FAILURE_RATE">{lang === 'zh' ? '失败率' : 'Failure Rate'}</option><option value="LATENCY_THRESHOLD">{lang === 'zh' ? '延迟阈值' : 'Latency Threshold'}</option><option value="PROVIDER_DOWN">{lang === 'zh' ? '供应商不可用' : 'Provider Down'}</option></select></Field>
+            <Field label={lang === 'zh' ? '供应商（可选）' : 'Provider (optional)'}><select value={ruleForm.providerId} onChange={(e) => setRuleForm({ ...ruleForm, providerId: e.target.value })} className={inputCls}><option value="">{lang === 'zh' ? '全部供应商' : 'All Providers'}</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
             <Field label="Threshold (JSON)"><input type="text" value={ruleForm.threshold} onChange={(e) => setRuleForm({ ...ruleForm, threshold: e.target.value })} className={inputCls} placeholder='{"threshold": 50}' /></Field>
             <Field label="Webhook URL"><input type="url" value={ruleForm.webhookUrl} onChange={(e) => setRuleForm({ ...ruleForm, webhookUrl: e.target.value })} className={inputCls} required placeholder="https://hooks.example.com/..." /></Field>
-            <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setShowAddRule(false)} className={btnSecondary}>Cancel</button><button type="submit" disabled={submitting} className={btnPrimary}>{submitting ? 'Creating...' : 'Create'}</button></div>
+            <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setShowAddRule(false)} className={btnSecondary}>{lang === 'zh' ? '取消' : 'Cancel'}</button><button type="submit" disabled={submitting} className={btnPrimary}>{submitting ? (lang === 'zh' ? '创建中...' : 'Creating...') : (lang === 'zh' ? '创建' : 'Create')}</button></div>
           </form>
         </Modal>
       )}

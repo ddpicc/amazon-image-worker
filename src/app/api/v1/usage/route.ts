@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       apiKeyId: searchParams.get('apiKeyId') || undefined,
       from: fromParam ? new Date(fromParam) : undefined,
       to: toParam ? new Date(toParam) : undefined,
+      includePrompt: auth.role === 'ADMIN',
       page,
       limit,
     })

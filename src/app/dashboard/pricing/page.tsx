@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useDashboardI18n } from '@/lib/dashboard/i18n'
 
 interface PriceRow {
   id: string
@@ -12,6 +13,7 @@ interface PriceRow {
 }
 
 export default function PricingPage() {
+  const { lang, t } = useDashboardI18n()
   const [prices, setPrices] = useState<PriceRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -25,7 +27,7 @@ export default function PricingPage() {
       const res = await fetch('/api/v1/admin/pricing', { cache: 'no-store' })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(body.error || 'Failed to load pricing')
+        setError(body.error || (lang === 'zh' ? '加载定价失败' : 'Failed to load pricing'))
         return
       }
       setPrices(body.prices || [])
@@ -50,25 +52,25 @@ export default function PricingPage() {
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(body.error || 'Failed to save pricing')
+        setError(body.error || (lang === 'zh' ? '保存定价失败' : 'Failed to save pricing'))
         return
       }
       setPrices(body.prices || [])
-      setMessage('Pricing updated successfully')
+      setMessage(lang === 'zh' ? '定价已更新' : 'Pricing updated successfully')
     } finally {
       setSaving(false)
     }
   }
 
   if (loading) {
-    return <div className="text-gray-500">Loading pricing...</div>
+    return <div className="text-gray-500">{lang === 'zh' ? '正在加载定价...' : 'Loading pricing...'}</div>
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Pricing</h2>
-        <p className="text-sm text-gray-500 mt-1">Manage SKU pricing for image generation and editing in CNY</p>
+        <h2 className="text-2xl font-bold text-gray-900">{t('navPricing')}</h2>
+        <p className="text-sm text-gray-500 mt-1">{lang === 'zh' ? '管理生图和编辑任务的 CNY SKU 定价' : 'Manage SKU pricing for image generation and editing in CNY'}</p>
       </div>
 
       {message && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">{message}</div>}
@@ -79,10 +81,10 @@ export default function PricingPage() {
           <thead className="bg-gray-50 text-gray-700">
             <tr>
               <th className="px-4 py-3 text-left font-medium">SKU</th>
-              <th className="px-4 py-3 text-left font-medium">Label</th>
-              <th className="px-4 py-3 text-left font-medium">Price (CNY)</th>
-              <th className="px-4 py-3 text-left font-medium">Version</th>
-              <th className="px-4 py-3 text-left font-medium">Enabled</th>
+              <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '标签' : 'Label'}</th>
+              <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '价格（CNY）' : 'Price (CNY)'}</th>
+              <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '版本' : 'Version'}</th>
+              <th className="px-4 py-3 text-left font-medium">{t('enabled')}</th>
             </tr>
           </thead>
           <tbody>
@@ -114,7 +116,7 @@ export default function PricingPage() {
                         setPrices((current) => current.map((item, i) => i === index ? { ...item, enabled: checked } : item))
                       }}
                     />
-                    <span className="text-gray-700">{row.enabled ? 'Enabled' : 'Disabled'}</span>
+                    <span className="text-gray-700">{row.enabled ? t('enabled') : t('disabled')}</span>
                   </label>
                 </td>
               </tr>
@@ -128,7 +130,7 @@ export default function PricingPage() {
         disabled={saving}
         className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
       >
-        {saving ? 'Saving...' : 'Save Pricing'}
+        {saving ? t('saving') : (lang === 'zh' ? '保存定价' : 'Save Pricing')}
       </button>
     </div>
   )

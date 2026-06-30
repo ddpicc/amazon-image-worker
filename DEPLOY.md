@@ -120,14 +120,14 @@ SERVICE_ROLE=worker
 
 ## 步骤 6：首次部署 & 数据库迁移
 
-两个 Service 都部署完成后，Web 的启动脚本会自动执行 `prisma db push` 创建表。
+两个 Service 都部署完成后，Web 的启动脚本会自动执行 `prisma migrate deploy` 应用迁移。
 
 如果没有自动执行，可以手动操作：
 
 1. 在 web Service → **Deployments** → 最新的 deployment → 点开
 2. 在 **Railway Shell**（或终端）中执行：
    ```bash
-   npx prisma db push --schema prisma/schema.prisma
+   npx prisma migrate deploy --schema prisma/schema.prisma
    ```
 
 ## 步骤 7：验证

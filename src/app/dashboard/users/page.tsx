@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { Fragment, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchCurrentUser } from '@/lib/dashboard/auth'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { roleLabel, taskStatusLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
 
 interface UserRow {
   id: string
@@ -43,6 +44,7 @@ interface UserTask {
 
 export default function UsersPage() {
   const router = useRouter()
+  const { lang, t } = useDashboardI18n()
   const [users, setUsers] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -64,7 +66,7 @@ export default function UsersPage() {
       setUsers(json.users ?? [])
       setError('')
     } catch {
-      setError('Failed to load users')
+      setError(lang === 'zh' ? '加载用户失败' : 'Failed to load users')
     } finally {
       setLoading(false)
     }
@@ -93,7 +95,7 @@ export default function UsersPage() {
         await fetchUsers()
       } else {
         const body = await res.json().catch(() => ({}))
-        alert(body.error || 'Failed to update user')
+        alert(body.error || (lang === 'zh' ? '更新用户失败' : 'Failed to update user'))
       }
     } finally {
       setActionLoading(null)
@@ -133,14 +135,14 @@ export default function UsersPage() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading users...</div></div>
+    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">{lang === 'zh' ? '正在加载用户...' : 'Loading users...'}</div></div>
   }
 
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Users</h2>
-        <p className="text-sm text-gray-500 mt-1">Admin-only user management view</p>
+        <h2 className="text-2xl font-bold text-gray-900">{t('navUsers')}</h2>
+        <p className="text-sm text-gray-500 mt-1">{lang === 'zh' ? '仅管理员可见的用户管理视图' : 'Admin-only user management view'}</p>
       </div>
 
       {error && (
@@ -155,26 +157,26 @@ export default function UsersPage() {
             <thead>
               <tr className="bg-gray-50 text-left text-gray-500">
                 <th className="px-4 py-2.5 font-medium w-8"></th>
-                <th className="px-4 py-2.5 font-medium">Email</th>
-                <th className="px-4 py-2.5 font-medium">Name</th>
-                <th className="px-4 py-2.5 font-medium">Role</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">API Keys</th>
-                <th className="px-4 py-2.5 font-medium">Tasks</th>
-                <th className="px-4 py-2.5 font-medium">Sessions</th>
-                <th className="px-4 py-2.5 font-medium">Created</th>
-                <th className="px-4 py-2.5 font-medium">Actions</th>
+                <th className="px-4 py-2.5 font-medium">{t('email')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('name')}</th>
+                <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '角色' : 'Role'}</th>
+                <th className="px-4 py-2.5 font-medium">{t('status')}</th>
+                <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? 'API 密钥数' : 'API Keys'}</th>
+                <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '任务数' : 'Tasks'}</th>
+                <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '会话数' : 'Sessions'}</th>
+                <th className="px-4 py-2.5 font-medium">{t('created')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('actions')}</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-gray-400">No users found</td>
+                  <td colSpan={10} className="px-4 py-8 text-center text-gray-400">{lang === 'zh' ? '没有找到用户' : 'No users found'}</td>
                 </tr>
               ) : (
                 users.map((user, i) => (
-                  <>
-                    <tr key={user.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}>
+                  <Fragment key={user.id}>
+                    <tr className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}>
                       <td className="px-4 py-2.5">
                         <button onClick={() => toggleExpand(user.id)} className="text-gray-400 hover:text-gray-600">
                           {expandedId === user.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -184,12 +186,12 @@ export default function UsersPage() {
                       <td className="px-4 py-2.5 text-gray-600">{user.name || '-'}</td>
                       <td className="px-4 py-2.5">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
-                          {user.role}
+                          {roleLabel(lang, user.role)}
                         </span>
                       </td>
                       <td className="px-4 py-2.5">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${user.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                          {user.enabled ? 'Enabled' : 'Disabled'}
+                          {user.enabled ? t('enabled') : t('disabled')}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-gray-600">{user.apiKeyCount}</td>
@@ -202,7 +204,7 @@ export default function UsersPage() {
                           disabled={actionLoading === user.id || user.role === 'ADMIN'}
                           className={`px-3 py-1 text-xs rounded transition-colors ${user.enabled ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'} disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
-                          {actionLoading === user.id ? 'Updating...' : user.enabled ? 'Disable' : 'Enable'}
+                          {actionLoading === user.id ? (lang === 'zh' ? '更新中...' : 'Updating...') : user.enabled ? (lang === 'zh' ? '禁用' : 'Disable') : (lang === 'zh' ? '启用' : 'Enable')}
                         </button>
                       </td>
                     </tr>
@@ -210,23 +212,23 @@ export default function UsersPage() {
                       <tr className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                         <td colSpan={10} className="px-4 py-4 bg-gray-50">
                           {detailLoading === user.id ? (
-                            <div className="text-sm text-gray-500">Loading details...</div>
+                            <div className="text-sm text-gray-500">{lang === 'zh' ? '正在加载详情...' : 'Loading details...'}</div>
                           ) : (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                               <div>
-                                <h4 className="text-sm font-semibold text-gray-900 mb-2">API Keys</h4>
+                                <h4 className="text-sm font-semibold text-gray-900 mb-2">{lang === 'zh' ? 'API 密钥' : 'API Keys'}</h4>
                                 <div className="rounded border border-gray-200 bg-white overflow-hidden">
                                   <table className="w-full text-xs">
                                     <thead>
                                       <tr className="bg-gray-50 text-left text-gray-500">
-                                        <th className="px-3 py-2 font-medium">Name</th>
-                                        <th className="px-3 py-2 font-medium">Prefix</th>
-                                        <th className="px-3 py-2 font-medium">Status</th>
+                                        <th className="px-3 py-2 font-medium">{t('name')}</th>
+                                        <th className="px-3 py-2 font-medium">{lang === 'zh' ? '前缀' : 'Prefix'}</th>
+                                        <th className="px-3 py-2 font-medium">{t('status')}</th>
                                       </tr>
                                     </thead>
                                     <tbody>
                                       {(userKeys[user.id] ?? []).length === 0 ? (
-                                        <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No API keys</td></tr>
+                                        <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">{lang === 'zh' ? '没有 API 密钥' : 'No API keys'}</td></tr>
                                       ) : (
                                         (userKeys[user.id] ?? []).map((key) => (
                                           <tr key={key.id} className="border-t border-gray-100">
@@ -234,7 +236,7 @@ export default function UsersPage() {
                                             <td className="px-3 py-2 font-mono text-gray-500">{key.keyPrefix}...</td>
                                             <td className="px-3 py-2">
                                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${key.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                {key.enabled ? 'Enabled' : 'Disabled'}
+                                                {key.enabled ? t('enabled') : t('disabled')}
                                               </span>
                                             </td>
                                           </tr>
@@ -246,26 +248,26 @@ export default function UsersPage() {
                               </div>
 
                               <div>
-                                <h4 className="text-sm font-semibold text-gray-900 mb-2">Recent Tasks</h4>
+                                <h4 className="text-sm font-semibold text-gray-900 mb-2">{lang === 'zh' ? '最近任务' : 'Recent Tasks'}</h4>
                                 <div className="rounded border border-gray-200 bg-white overflow-hidden">
                                   <table className="w-full text-xs">
                                     <thead>
                                       <tr className="bg-gray-50 text-left text-gray-500">
-                                        <th className="px-3 py-2 font-medium">Prompt</th>
-                                        <th className="px-3 py-2 font-medium">Status</th>
-                                        <th className="px-3 py-2 font-medium">API Key</th>
+                                        <th className="px-3 py-2 font-medium">{t('prompt')}</th>
+                                        <th className="px-3 py-2 font-medium">{t('status')}</th>
+                                        <th className="px-3 py-2 font-medium">{t('apiKey')}</th>
                                       </tr>
                                     </thead>
                                     <tbody>
                                       {(userTasks[user.id] ?? []).length === 0 ? (
-                                        <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No tasks</td></tr>
+                                        <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">{lang === 'zh' ? '没有任务' : 'No tasks'}</td></tr>
                                       ) : (
                                         (userTasks[user.id] ?? []).map((task) => (
                                           <tr key={task.id} className="border-t border-gray-100">
                                             <td className="px-3 py-2 text-gray-700 max-w-[240px] truncate">{task.prompt}</td>
                                             <td className="px-3 py-2">
                                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${task.status === 'SUCCEEDED' ? 'bg-green-100 text-green-800' : task.status === 'FAILED' ? 'bg-red-100 text-red-800' : task.status === 'PROCESSING' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'}`}>
-                                                {task.status}
+                                                {taskStatusLabel(lang, task.status)}
                                               </span>
                                             </td>
                                             <td className="px-3 py-2 text-gray-600">{task.apiKey?.name || '-'}</td>
@@ -281,7 +283,7 @@ export default function UsersPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))
               )}
             </tbody>
