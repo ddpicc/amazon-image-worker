@@ -22,7 +22,7 @@ function generateAdminTestRawApiKey(ownerUserId: string): string {
     .update(`${process.env.APP_SECRET}:admin-test:${ownerUserId}`)
     .digest('hex')
 
-  return `imgw_${digest.slice(0, 48)}`
+  return `sk-${digest.slice(0, 48)}`
 }
 
 export async function createApiKey(name: string, ownerUserId: string): Promise<CreateApiKeyResult> {
@@ -90,7 +90,7 @@ export async function ensureAdminTestApiKey(ownerUserId: string): Promise<Create
 }
 
 export async function validateApiKey(rawKey: string) {
-  if (!rawKey.startsWith('imgw_')) {
+  if (!rawKey.startsWith('sk-') && !rawKey.startsWith('imgw_')) {
     return null
   }
 

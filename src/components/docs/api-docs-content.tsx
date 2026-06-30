@@ -1,4 +1,4 @@
-const createGenerationsTaskExample = `curl -X POST "$BASE_URL/v1/images/generations" \\
+const createGenerationsTaskExample = `curl -X POST "https://web-production-14606.up.railway.app/v1/images/generations" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -10,7 +10,7 @@ const createGenerationsTaskExample = `curl -X POST "$BASE_URL/v1/images/generati
     "callback_url": "https://your-domain.com/webhooks/image-task-completed"
   }'`
 
-const createEditsTaskExample = `curl -X POST "$BASE_URL/v1/images/edits" \\
+const createEditsTaskExample = `curl -X POST "https://web-production-14606.up.railway.app/v1/images/edits" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -22,7 +22,7 @@ const createEditsTaskExample = `curl -X POST "$BASE_URL/v1/images/edits" \\
     "callback_url": "https://your-domain.com/webhooks/image-task-completed"
   }'`
 
-const queryTaskExample = `curl "$BASE_URL/v1/images/tasks/task_xxx" \\
+const queryTaskExample = `curl "https://web-production-14606.up.railway.app/v1/images/tasks/task_xxx" \\
   -H "Authorization: Bearer YOUR_API_KEY"`
 
 const callbackExample = `{
@@ -166,9 +166,10 @@ export function ApiDocsContent() {
         <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600">API Documentation</p>
         <h1 className="mt-4 text-4xl font-bold tracking-tight text-gray-950">Image Generation API</h1>
         <p className="mt-4 max-w-3xl text-base leading-7 text-gray-600">
-          Unified asynchronous image generation API. Submit text-to-image tasks with{' '}
-          <code>/v1/images/generations</code> or image editing tasks with{' '}
-          <code>/v1/images/edits</code>, then poll <code>/v1/images/tasks/:id</code> or
+          Unified asynchronous image generation API. Use{' '}
+          <code>https://web-production-14606.up.railway.app/v1/images/generations</code> when there are no
+          reference images, or use <code>https://web-production-14606.up.railway.app/v1/images/edits</code> when
+          reference images are provided, then poll <code>/v1/images/tasks/:id</code> or
           receive a webhook callback when the task completes.
         </p>
       </div>
@@ -192,8 +193,8 @@ export function ApiDocsContent() {
         <section className="space-y-4">
           <SectionTitle>Base URL</SectionTitle>
           <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm text-gray-700">
-            Use your deployment domain as the API base, for example:
-            <div className="mt-2 font-mono text-gray-900">https://your-domain.com</div>
+            Use the production API domain below:
+            <div className="mt-2 font-mono text-gray-900">https://web-production-14606.up.railway.app</div>
           </div>
         </section>
 
@@ -205,16 +206,16 @@ export function ApiDocsContent() {
 
         <CreateTaskSection
           title="Create Image Generation Task"
-          endpoint="/v1/images/generations"
-          description="Create an asynchronous text-to-image generation task."
+          endpoint="https://web-production-14606.up.railway.app/v1/images/generations"
+          description="Create an asynchronous text-to-image generation task. Use this endpoint when no reference image is provided."
           fields={createGenerationsRequestFields}
           example={createGenerationsTaskExample}
         />
 
         <CreateTaskSection
           title="Create Image Edit Task"
-          endpoint="/v1/images/edits"
-          description="Create an asynchronous image editing task. Provide one or more reference images to edit using a text prompt."
+          endpoint="https://web-production-14606.up.railway.app/v1/images/edits"
+          description="Create an asynchronous image editing task. Use this endpoint when one or more reference images are provided."
           fields={createEditsRequestFields}
           example={createEditsTaskExample}
         />
@@ -222,7 +223,7 @@ export function ApiDocsContent() {
         <section className="space-y-4">
           <SectionTitle>Query Task Status</SectionTitle>
           <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm text-gray-700">
-            <div className="font-mono text-gray-950">GET /v1/images/tasks/:id</div>
+            <div className="font-mono text-gray-950">GET https://web-production-14606.up.railway.app/v1/images/tasks/:id</div>
             <p className="mt-2">Query the current status and final output of a previously created task. Works for both generation and edit tasks.</p>
           </div>
           <CodeBlock>{queryTaskExample}</CodeBlock>
@@ -256,7 +257,7 @@ export function ApiDocsContent() {
         <section className="space-y-4">
           <SectionTitle>Compatibility Notes</SectionTitle>
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm leading-7 text-amber-950">
-            <p>The recommended public API surface uses two endpoints: <code>POST /v1/images/generations</code> for text-to-image and <code>POST /v1/images/edits</code> for image-to-image editing.</p>
+            <p>Use <code>POST https://web-production-14606.up.railway.app/v1/images/generations</code> when there is no reference image, and use <code>POST https://web-production-14606.up.railway.app/v1/images/edits</code> when reference images are included.</p>
             <p className="mt-2">
               Both endpoints share the same async task lifecycle: submit → poll <code>/v1/images/tasks/:id</code> → receive result.
             </p>
