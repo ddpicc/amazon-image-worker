@@ -195,6 +195,15 @@ function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
   return undefined
 }
 
+function isBareIpUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(url.hostname)
+  } catch {
+    return false
+  }
+}
+
 async function withTimeout<T>(run: () => Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return Promise.race([
     run(),
@@ -228,6 +237,13 @@ async function extractUpstreamImage(imageData: any): Promise<{ buffer: Buffer; m
   if (rawImageUrl.startsWith('data:')) {
     const parsed = parseDataUrl(rawImageUrl)
     return { ...parsed, returnedKind: 'data-url' }
+  }
+
+  if (rawImageUrl && b64Json && isBareIpUrl(rawImageUrl)) {
+    return {
+      ...parseBase64Payload(b64Json),
+      returnedKind: 'b64-json',
+    }
   }
 
   if (rawImageUrl) {

@@ -120,6 +120,15 @@ function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
   return undefined
 }
 
+function isBareIpUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(url.hostname)
+  } catch {
+    return false
+  }
+}
+
 async function downloadRemoteImage(url: string, timeoutMs = PROVIDER_TIMEOUT_MS): Promise<{ buffer: Buffer; mimeType: string }> {
   const response = await fetch(url, {
     signal: createTimeoutSignal(timeoutMs),
@@ -142,6 +151,14 @@ async function extractUpstreamImage(imageData: any): Promise<{ buffer: Buffer; m
   if (rawImageUrl.startsWith('data:')) {
     const parsed = parseDataUrl(rawImageUrl)
     return { ...parsed, returnedKind: 'data-url', imageUrl: null }
+  }
+
+  if (rawImageUrl && b64Json && isBareIpUrl(rawImageUrl)) {
+    return {
+      ...parseBase64Payload(b64Json),
+      returnedKind: 'b64-json',
+      imageUrl: null,
+    }
   }
 
   if (rawImageUrl) {
