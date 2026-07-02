@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
 import { lookupPricingForSize, resolvePublicImageSize } from '@/lib/billing/price-service'
-import { buildSyncImageResponse } from '@/lib/image-sync-response'
+import { checkBalance } from '@/lib/billing/billing-service'
+import { fenToYuan } from '@/lib/money'
 import type { RenderSize } from '@/lib/image-options'
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
-import { SubmitImageTaskError, submitBillableImageTaskSync } from '@/lib/image-task-submission'
+import { SubmitImageTaskError, submitBillableImageTaskAsync } from '@/lib/image-task-submission'
+import { RemoteReferenceImageError, storeRemoteReferenceImages } from '@/lib/remote-reference-images'
 
 const ALLOWED_MODELS = new Set(['gpt-image-2', 'agnes-image-2.1-flash'])
-const ALLOWED_QUALITIES = new Set(['low', 'medium', 'high'])
 
 function isHttpsUrl(value: string) {
   try {
@@ -18,10 +19,19 @@ function isHttpsUrl(value: string) {
   }
 }
 
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const ipRateLimitResponse = await enforceRateLimit(request, {
-      key: `images:generations:ip:${getClientIp(request)}`,
+      key: `images:edits:ip:${getClientIp(request)}`,
       limit: 120,
       windowSeconds: 60,
     })
@@ -38,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const apiKeyRateLimitResponse = await enforceRateLimit(request, {
-      key: `images:generations:key:${auth.apiKeyId}`,
+      key: `images:edits:key:${auth.apiKeyId}`,
       limit: 60,
       windowSeconds: 60,
     })
@@ -48,17 +58,26 @@ export async function POST(request: NextRequest) {
     const {
       model = 'gpt-image-2',
       prompt,
+      image,
       size = 'auto',
-      quality = 'medium',
       n = 1,
       callback_url,
+      mask_url,
     } = body as {
       model?: string
       prompt?: string
+      image?: string[]
       size?: string
-      quality?: string
       n?: number
       callback_url?: string
+      mask_url?: string
+    }
+
+    if (mask_url !== undefined) {
+      return NextResponse.json(
+        { error: 'mask_url is not supported' },
+        { status: 400 },
+      )
     }
 
     if (!ALLOWED_MODELS.has(model)) {
@@ -93,11 +112,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (typeof quality !== 'string' || !ALLOWED_QUALITIES.has(quality)) {
+    if (!Array.isArray(image) || image.length === 0) {
       return NextResponse.json(
-        { error: 'quality must be one of low, medium, high' },
+        { error: 'image is required, at least 1 image must be provided' },
         { status: 400 },
       )
+    }
+
+    if (image.length > 16) {
+      return NextResponse.json(
+        { error: 'image supports up to 16 images' },
+        { status: 400 },
+      )
+    }
+
+    for (const url of image) {
+      if (typeof url !== 'string' || !isValidHttpUrl(url)) {
+        return NextResponse.json(
+          { error: 'image must contain valid http/https URLs' },
+          { status: 400 },
+        )
+      }
     }
 
     const resolvedSize = resolvePublicImageSize(size)
@@ -132,23 +167,40 @@ export async function POST(request: NextRequest) {
     }
 
     const totalCostFen = pricing.unitPriceFen * n
-    const submitResult = await submitBillableImageTaskSync({
+    const balanceCheck = await checkBalance(auth.userId, totalCostFen)
+    if (!balanceCheck.sufficient) {
+      return NextResponse.json(
+        {
+          error: 'Insufficient balance',
+          code: 'insufficient_balance',
+          balance: fenToYuan(balanceCheck.currentBalanceFen),
+          balance_fen: balanceCheck.currentBalanceFen,
+          required: fenToYuan(totalCostFen),
+          required_fen: totalCostFen,
+        },
+        { status: 402 },
+      )
+    }
+
+    const storedReferenceImages = await storeRemoteReferenceImages(image)
+
+    const submitResult = await submitBillableImageTaskAsync({
       userId: auth.userId,
       apiKeyId: auth.apiKeyId,
       model,
       prompt: prompt.trim(),
       originalPrompt: prompt.trim(),
-      entryApi: 'openai-images-generations-sync',
-      imageType: 'generate',
+      entryApi: 'openai-images-edits',
+      imageType: 'edit',
       aspectRatio: null,
       size: resolvedSize as RenderSize,
-      referenceImages: [],
+      referenceImages: storedReferenceImages,
       metadata: {
         source: 'openai-compatible',
         model,
-        quality,
         requestedSize: size,
         n,
+        image,
       },
       callbackUrl: callback_url ?? null,
       totalCostFen,
@@ -159,9 +211,39 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json(
-      buildSyncImageResponse(submitResult.task, submitResult.idempotent),
+      {
+        created: Math.floor(Date.now() / 1000),
+        id: submitResult.requestId,
+        model,
+        object: 'image.edit.task',
+        progress: 0,
+        status: 'pending',
+        task_info: {
+          type: 'image',
+        },
+        usage: {
+          sku: submitResult.pricingSku,
+          unit_price: fenToYuan(submitResult.unitPriceFen),
+          price_version: submitResult.priceVersion,
+          total_cost: fenToYuan(submitResult.totalCostFen),
+          unit_price_fen: submitResult.unitPriceFen,
+          total_cost_fen: submitResult.totalCostFen,
+          currency: 'CNY',
+        },
+        idempotent: submitResult.idempotent,
+      },
+      { status: 202 },
     )
   } catch (error) {
+    if (error instanceof RemoteReferenceImageError) {
+      return NextResponse.json(
+        {
+          error: 'Invalid reference image',
+          code: error.code,
+        },
+        { status: 400 },
+      )
+    }
     if (error instanceof SubmitImageTaskError) {
       return NextResponse.json(
         {

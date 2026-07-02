@@ -62,6 +62,13 @@ export async function GET(request: NextRequest) {
           callbackUrl: isAdmin,
           workerJobId: isAdmin,
           capacityRequeueCount: isAdmin,
+          operation: isAdmin
+            ? {
+                select: {
+                  entryPoint: true,
+                },
+              }
+            : false,
           apiKey: {
             select: {
               id: true,

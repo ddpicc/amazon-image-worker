@@ -5,6 +5,11 @@ import {
 } from '@/lib/ai-operations'
 import { refundBalance } from '@/lib/billing/billing-service'
 import { prisma } from '@/lib/db/prisma'
+import {
+  executeSyncImageGeneration,
+  ProviderCapacityRequeueError,
+  ProviderExecutionFailedError,
+} from '@/lib/image-generation-service'
 import { enqueueImageGeneration } from '@/lib/image-generation-worker-queue'
 import { buildPersistedImageGenerationPayload } from '@/lib/image-generation-service'
 import type { AspectRatio, RenderSize } from '@/lib/image-options'
@@ -59,6 +64,18 @@ interface SubmitBillableImageTaskResult {
   priceVersion: number
   totalCostFen: number
   idempotent: boolean
+}
+
+type PersistedTaskWithAssets = Prisma.ImageGenerationRequestGetPayload<{
+  include: {
+    assets: {
+      orderBy: { createdAt: 'asc' }
+    }
+  }
+}>
+
+interface ExecuteSyncBillableImageTaskResult extends SubmitBillableImageTaskResult {
+  task: PersistedTaskWithAssets
 }
 
 type QuotaRow = {
@@ -171,7 +188,7 @@ async function compensateFailedEnqueue(params: {
   }).catch(() => undefined)
 }
 
-export async function submitBillableImageTask(
+async function createBillableImageTask(
   params: SubmitBillableImageTaskParams,
 ): Promise<SubmitBillableImageTaskResult> {
   const normalizedIdempotencyKey = params.idempotencyKey?.trim() || null
@@ -382,6 +399,76 @@ export async function submitBillableImageTask(
     return result
   }
 
+  return result
+}
+
+async function refundFailedSynchronousTask(params: {
+  userId: string
+  apiKeyId: string
+  requestId: string
+  totalCostFen: number
+  reason: string
+}) {
+  await decrementQuotaBestEffort(params.apiKeyId)
+  await refundBalance(
+    params.userId,
+    params.totalCostFen,
+    params.requestId,
+    params.reason,
+  )
+}
+
+async function loadTaskWithAssets(requestId: string) {
+  return prisma.imageGenerationRequest.findUnique({
+    where: { id: requestId },
+    include: {
+      assets: {
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+  })
+}
+
+async function dispatchStoredTaskCallbackBestEffort(requestId: string) {
+  const task = await loadTaskWithAssets(requestId)
+  if (!task?.callbackUrl) return
+
+  await dispatchImageTaskCallback({
+    callbackUrl: task.callbackUrl,
+    task,
+  }).catch(() => undefined)
+}
+
+function throwForExistingSyncFailure(requestId: string, message: string | null | undefined): never {
+  if (message?.includes('No enabled image providers')) {
+    throw new SubmitImageTaskError(503, 'no_provider_available', 'No image provider is currently available. Please retry later.', {
+      request_id: requestId,
+    })
+  }
+
+  if (message?.includes('capacity') || message?.includes('满载')) {
+    throw new SubmitImageTaskError(503, 'capacity_exceeded', 'The image service is currently busy. Please retry later.', {
+      request_id: requestId,
+    })
+  }
+
+  throw new SubmitImageTaskError(
+    520,
+    'provider_retry_recommended',
+    'Selected provider failed. Retry to reselect another provider.',
+    { request_id: requestId },
+  )
+}
+
+export async function submitBillableImageTaskAsync(
+  params: SubmitBillableImageTaskParams,
+): Promise<SubmitBillableImageTaskResult> {
+  const result = await createBillableImageTask(params)
+
+  if (result.idempotent) {
+    return result
+  }
+
   try {
     const job = await enqueueImageGeneration({ requestId: result.requestId })
     await prisma.imageGenerationRequest
@@ -403,7 +490,7 @@ export async function submitBillableImageTask(
       priceVersion: result.priceVersion,
       size: params.size,
       imageType: params.imageType,
-      idempotencyKey: normalizedIdempotencyKey,
+      idempotencyKey: params.idempotencyKey?.trim() || null,
     })
   } catch (error) {
     await compensateFailedEnqueue({
@@ -422,6 +509,98 @@ export async function submitBillableImageTask(
   }
 
   return result
+}
+
+export async function submitBillableImageTaskSync(
+  params: SubmitBillableImageTaskParams,
+): Promise<ExecuteSyncBillableImageTaskResult> {
+  const result = await createBillableImageTask({
+    ...params,
+    entryApi: params.entryApi,
+  })
+
+  const existingTask = await loadTaskWithAssets(result.requestId)
+  if (!existingTask) {
+    throw new SubmitImageTaskError(500, 'task_not_found', 'Task not found after submission')
+  }
+
+  if (existingTask.status === 'FAILED') {
+    throwForExistingSyncFailure(result.requestId, existingTask.errorMessage)
+  }
+
+  if (existingTask.status === 'SUCCEEDED') {
+    return {
+      ...result,
+      task: existingTask,
+    }
+  }
+
+  try {
+    await executeSyncImageGeneration(result.requestId)
+    const task = await loadTaskWithAssets(result.requestId)
+    if (!task) {
+      throw new SubmitImageTaskError(500, 'task_not_found', 'Task not found after execution')
+    }
+    return {
+      ...result,
+      task,
+    }
+  } catch (error) {
+    if (error instanceof ProviderCapacityRequeueError) {
+      throw new SubmitImageTaskError(
+        503,
+        'capacity_exceeded',
+        'The image service is currently busy. Please retry later.',
+        { request_id: result.requestId },
+      )
+    }
+
+    if (error instanceof ProviderExecutionFailedError) {
+      await refundFailedSynchronousTask({
+        userId: params.userId,
+        apiKeyId: params.apiKeyId,
+        requestId: result.requestId,
+        totalCostFen: result.totalCostFen,
+        reason: 'sync_provider_failed',
+      })
+      await dispatchStoredTaskCallbackBestEffort(result.requestId)
+      throw new SubmitImageTaskError(
+        520,
+        'provider_retry_recommended',
+        'Selected provider failed. Retry to reselect another provider.',
+        { request_id: result.requestId },
+      )
+    }
+
+    const task = await loadTaskWithAssets(result.requestId)
+    if (task?.status !== 'FAILED') {
+      await prisma.imageGenerationRequest.update({
+        where: { id: result.requestId },
+        data: {
+          status: 'FAILED',
+          errorMessage: error instanceof Error ? error.message : 'Synchronous image generation failed',
+          statusMessage: '同步生成失败，已自动退款',
+          completedAt: new Date(),
+        },
+      }).catch(() => undefined)
+    }
+
+    await refundFailedSynchronousTask({
+      userId: params.userId,
+      apiKeyId: params.apiKeyId,
+      requestId: result.requestId,
+      totalCostFen: result.totalCostFen,
+      reason: 'sync_execution_failed',
+    })
+    await dispatchStoredTaskCallbackBestEffort(result.requestId)
+
+    throw new SubmitImageTaskError(
+      500,
+      'sync_execution_failed',
+      error instanceof Error ? error.message : 'Synchronous image generation failed',
+      { request_id: result.requestId },
+    )
+  }
 }
 
 export async function reconcileTimedOutBillableImageTasks(params?: {

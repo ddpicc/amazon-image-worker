@@ -136,9 +136,11 @@ R2_PUBLIC_BASE_URL=
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/v1/images/generations` | 提交图片生成任务（文生图） |
-| POST | `/v1/images/edits` | 提交图片编辑任务（图生图） |
-| GET | `/v1/images/tasks/:id` | 查询单个任务状态与结果 |
+| POST | `/v1/images/generations` | 同步文生图，直接返回结果 |
+| POST | `/v1/images/edits` | 同步图生图，直接返回结果 |
+| POST | `/v1/async/images/generations` | 异步文生图，提交任务 |
+| POST | `/v1/async/images/edits` | 异步图生图，提交任务 |
+| GET | `/v1/async/images/tasks/:id` | 查询异步任务状态与结果 |
 
 ### 后台任务接口（Dashboard / 管理查询）
 
@@ -165,9 +167,23 @@ R2_PUBLIC_BASE_URL=
 
 ## 路由约定
 
-- 对外异步生图统一使用 `/v1/images/generations`、`/v1/images/edits` 和 `/v1/images/tasks/:id`
+- 对外同步生图使用 `/v1/images/generations` 和 `/v1/images/edits`
+- 对外异步生图统一使用 `/v1/async/images/generations`、`/v1/async/images/edits` 和 `/v1/async/images/tasks/:id`
 - `/api/v1/tasks*` 只给 Dashboard / 管理侧的任务列表和详情用
 - Provider、统计、API Key、告警等后台接口继续使用 `/api/v1/*`
+
+### 同步接口语义
+
+- 同步接口使用智能路由对 Provider 排序，但每次请求只执行排名第一的 Provider
+- 如果该 Provider 失败或 240 秒超时，不会在同一个请求里自动切换到后备 Provider
+- 这类失败会返回 `520`，错误码为 `provider_retry_recommended`
+- 客户端重试同一个请求时，系统会重新执行一次智能选择
+
+### 异步接口语义
+
+- 异步接口继续沿用 Worker 多线路切换
+- Provider 失败时，Worker 会自动切换后备线路
+- Provider 满载时，Worker 会进入延迟重试与超时补偿逻辑
 
 ## Evolink 清理
 

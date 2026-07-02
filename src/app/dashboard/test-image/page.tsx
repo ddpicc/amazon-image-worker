@@ -9,6 +9,7 @@ import { taskStatusLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
 
 type TaskStatus = 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
 type TestMode = 'queue' | 'direct'
+type ApiExecutionMode = 'async' | 'sync'
 
 interface ProviderOption {
   id: string
@@ -68,6 +69,40 @@ interface DirectTestResult {
   imageBase64: string
 }
 
+interface SyncApiResult {
+  id: string
+  created: number
+  object: string
+  model: string
+  size?: string
+  idempotent?: boolean
+  usage?: {
+    sku?: string
+    unit_price?: number
+    unit_price_fen?: number
+    price_version?: number
+    cost?: number
+    cost_fen?: number
+    cost_status?: string
+    currency?: string
+  }
+  task?: {
+    id: string
+    status: string
+  }
+  data: Array<{
+    url: string
+    revised_prompt?: string
+  }>
+}
+
+interface SyncApiErrorResult {
+  status: number
+  error: string
+  code?: string
+  request_id?: string
+}
+
 function getProviderState(provider: ProviderOption): 'TRIPPED' | 'DISABLED' | 'COOLDOWN' | 'ENABLED' {
   if (provider.circuitBreakerTrippedAt) return 'TRIPPED'
   if (!provider.enabled) return 'DISABLED'
@@ -113,12 +148,15 @@ export default function AdminTestImagePage() {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
   const [size, setSize] = useState('1024x1024')
   const [mode, setMode] = useState<TestMode>('queue')
+  const [apiExecutionMode, setApiExecutionMode] = useState<ApiExecutionMode>('async')
   const [editMode, setEditMode] = useState(false)
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([''])
   const [providers, setProviders] = useState<ProviderOption[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState('')
   const [requestId, setRequestId] = useState('')
   const [task, setTask] = useState<TaskDetail | null>(null)
+  const [syncResult, setSyncResult] = useState<SyncApiResult | null>(null)
+  const [syncErrorResult, setSyncErrorResult] = useState<SyncApiErrorResult | null>(null)
   const [directResult, setDirectResult] = useState<DirectTestResult | null>(null)
   const [resettingBreaker, setResettingBreaker] = useState(false)
   const [error, setError] = useState('')
@@ -276,6 +314,8 @@ export default function AdminTestImagePage() {
     setSubmitting(true)
     setError('')
     setTask(null)
+    setSyncResult(null)
+    setSyncErrorResult(null)
     setDirectResult(null)
     setRequestId('')
 
@@ -292,7 +332,11 @@ export default function AdminTestImagePage() {
 
         const testRawKey = keyJson.data.key as string
 
-        const endpoint = editMode ? '/v1/images/edits' : '/v1/images/generations'
+        const endpoint = mode === 'queue'
+          ? apiExecutionMode === 'async'
+            ? (editMode ? '/v1/async/images/edits' : '/v1/async/images/generations')
+            : (editMode ? '/v1/images/edits' : '/v1/images/generations')
+          : ''
         const body: Record<string, unknown> = {
           prompt: prompt.trim(),
           size,
@@ -319,7 +363,20 @@ export default function AdminTestImagePage() {
         })
         const submitJson = await submitRes.json().catch(() => null)
         if (!submitRes.ok) {
+          if (apiExecutionMode === 'sync') {
+            setSyncErrorResult({
+              status: submitRes.status,
+              error: submitJson?.error || (lang === 'zh' ? '同步 API 请求失败' : 'Sync API request failed'),
+              code: submitJson?.code,
+              request_id: submitJson?.request_id,
+            })
+          }
           throw new Error(submitJson?.error || (lang === 'zh' ? '提交任务失败' : 'Failed to submit task'))
+        }
+
+        if (apiExecutionMode === 'sync') {
+          setSyncResult(submitJson as SyncApiResult)
+          return
         }
 
         const nextRequestId = submitJson.id as string
@@ -469,6 +526,39 @@ export default function AdminTestImagePage() {
             </div>
           </div>
 
+          {mode === 'queue' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'zh' ? 'API 模式' : 'API Mode'}</label>
+              <div className="flex flex-wrap gap-3">
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="apiExecutionMode"
+                    value="async"
+                    checked={apiExecutionMode === 'async'}
+                    onChange={() => setApiExecutionMode('async')}
+                  />
+                  {lang === 'zh' ? '异步 API（/v1/async/images/*）' : 'Async API (/v1/async/images/*)'}
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="apiExecutionMode"
+                    value="sync"
+                    checked={apiExecutionMode === 'sync'}
+                    onChange={() => setApiExecutionMode('sync')}
+                  />
+                  {lang === 'zh' ? '同步 API（/v1/images/*）' : 'Sync API (/v1/images/*)'}
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                {apiExecutionMode === 'async'
+                  ? (lang === 'zh' ? '异步模式会返回 task id，并自动轮询任务详情。' : 'Async mode returns a task id and auto-polls task details.')
+                  : (lang === 'zh' ? '同步模式会直接返回图片结果；若命中 provider 失败会返回 520。' : 'Sync mode returns the final image directly and may return 520 on provider failure.')}
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'zh' ? '图片类型' : 'Image Type'}</label>
             <div className="flex flex-wrap gap-3">
@@ -585,9 +675,15 @@ export default function AdminTestImagePage() {
               disabled={submitting || !prompt.trim() || (mode === 'direct' && !selectedProviderId)}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {submitting ? (lang === 'zh' ? '提交中...' : 'Submitting...') : mode === 'queue' ? (lang === 'zh' ? '提交队列测试' : 'Submit Queue Test') : (lang === 'zh' ? '运行直连 Provider 测试' : 'Run Direct Provider Test')}
+              {submitting
+                ? (lang === 'zh' ? '提交中...' : 'Submitting...')
+                : mode === 'queue'
+                  ? apiExecutionMode === 'async'
+                    ? (lang === 'zh' ? '提交异步 API 测试' : 'Submit Async API Test')
+                    : (lang === 'zh' ? '提交同步 API 测试' : 'Submit Sync API Test')
+                  : (lang === 'zh' ? '运行直连 Provider 测试' : 'Run Direct Provider Test')}
             </button>
-            {mode === 'queue' && requestId && (
+            {mode === 'queue' && apiExecutionMode === 'async' && requestId && (
               <span className="text-xs text-gray-500">
                 {lang === 'zh' ? '请求 ID：' : 'Request ID: '}<span className="font-mono">{requestId}</span>
               </span>
@@ -689,6 +785,150 @@ export default function AdminTestImagePage() {
                   </a>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {syncResult && mode === 'queue' && apiExecutionMode === 'sync' && (
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">{lang === 'zh' ? '最新同步 API 结果' : 'Latest Sync API Result'}</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {lang === 'zh' ? '同步接口直接返回最终结果和内部 task 信息。' : 'Sync API returns the final result directly with persisted task metadata.'}
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="inline-flex rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
+                {syncResult.task?.status || 'completed'}
+              </div>
+              <div className="mt-2 text-xs text-gray-500">
+                {lang === 'zh' ? '请求 ID：' : 'Request ID: '}<span className="font-mono">{syncResult.id}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Object</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{syncResult.object}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '模型' : 'Model'}</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{syncResult.model}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '尺寸' : 'Size'}</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{syncResult.size || '-'}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Idempotent</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{String(Boolean(syncResult.idempotent))}</div>
+            </div>
+          </div>
+
+          {syncResult.usage && (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <div className="text-xs text-gray-500">SKU</div>
+                <div className="mt-1 text-sm font-medium text-gray-900">{syncResult.usage.sku || '-'}</div>
+              </div>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <div className="text-xs text-gray-500">{lang === 'zh' ? '费用' : 'Cost'}</div>
+                <div className="mt-1 text-sm font-medium text-gray-900">
+                  {syncResult.usage.cost ?? '-'} {syncResult.usage.currency || ''}
+                </div>
+              </div>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <div className="text-xs text-gray-500">{lang === 'zh' ? '计费状态' : 'Cost Status'}</div>
+                <div className="mt-1 text-sm font-medium text-gray-900">{syncResult.usage.cost_status || '-'}</div>
+              </div>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3">
+                <div className="text-xs text-gray-500">Task</div>
+                <div className="mt-1 text-sm font-medium text-gray-900">{syncResult.task?.id || syncResult.id}</div>
+              </div>
+            </div>
+          )}
+
+          {syncResult.data.length > 0 && (
+            <div>
+              <h4 className="mb-2 text-sm font-medium text-gray-900">{lang === 'zh' ? '生成图片' : 'Generated Images'}</h4>
+              <div className="flex flex-wrap gap-4">
+                {syncResult.data.map((asset, index) => (
+                  <a
+                    key={`${asset.url}-${index}`}
+                    href={asset.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block overflow-hidden rounded-lg border border-gray-200 bg-gray-50"
+                  >
+                    <img src={asset.url} alt={asset.revised_prompt || asset.url} className="h-48 w-48 object-cover" />
+                    <div className="border-t border-gray-200 px-3 py-2 text-xs text-gray-500">
+                      #{index + 1}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {syncResult.data.some((item) => item.revised_prompt) && (
+            <div>
+              <h4 className="mb-2 text-sm font-medium text-gray-900">{lang === 'zh' ? '修订后的提示词' : 'Revised Prompt'}</h4>
+              <div className="space-y-2">
+                {syncResult.data.map((item, index) => item.revised_prompt ? (
+                  <div key={`revised-${index}`} className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 whitespace-pre-wrap">
+                    {item.revised_prompt}
+                  </div>
+                ) : null)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {syncErrorResult && mode === 'queue' && apiExecutionMode === 'sync' && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-amber-950">{lang === 'zh' ? '同步 API 失败结果' : 'Sync API Failure Result'}</h3>
+              <p className="mt-1 text-sm text-amber-900/80">
+                {lang === 'zh'
+                  ? '这里会展示同步 API 的错误码、request_id 和建议重试信息，便于验证 520 链路。'
+                  : 'This panel highlights sync API failures, including status code, request_id, and retry guidance for 520 validation.'}
+              </p>
+            </div>
+            <div className="rounded bg-amber-200 px-2 py-1 text-xs font-medium text-amber-950">
+              HTTP {syncErrorResult.status}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded border border-amber-200 bg-white/70 p-3">
+              <div className="text-xs text-amber-800">HTTP Status</div>
+              <div className="mt-1 text-sm font-medium text-amber-950">{syncErrorResult.status}</div>
+            </div>
+            <div className="rounded border border-amber-200 bg-white/70 p-3">
+              <div className="text-xs text-amber-800">Code</div>
+              <div className="mt-1 text-sm font-medium text-amber-950">{syncErrorResult.code || '-'}</div>
+            </div>
+            <div className="rounded border border-amber-200 bg-white/70 p-3 sm:col-span-2">
+              <div className="text-xs text-amber-800">Request ID</div>
+              <div className="mt-1 break-all font-mono text-sm font-medium text-amber-950">{syncErrorResult.request_id || '-'}</div>
+            </div>
+          </div>
+
+          <div className="rounded border border-amber-200 bg-white/70 p-4 text-sm text-amber-950">
+            <div className="font-medium">{lang === 'zh' ? '错误信息' : 'Error Message'}</div>
+            <div className="mt-2 whitespace-pre-wrap">{syncErrorResult.error}</div>
+          </div>
+
+          {syncErrorResult.status === 520 && (
+            <div className="rounded border border-amber-300 bg-amber-100 px-4 py-3 text-sm text-amber-950">
+              {lang === 'zh'
+                ? '这是预期的同步单 Provider 失败链路。请直接重试同一请求，系统会重新选择 Provider。'
+                : 'This is the expected sync single-provider failure path. Retry the same request to trigger a fresh provider selection.'}
             </div>
           )}
         </div>

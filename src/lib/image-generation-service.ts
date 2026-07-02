@@ -59,6 +59,16 @@ export class ProviderCapacityRequeueError extends Error {
   }
 }
 
+export class ProviderExecutionFailedError extends Error {
+  requestId: string
+
+  constructor(requestId: string, message: string) {
+    super(message)
+    this.name = 'ProviderExecutionFailedError'
+    this.requestId = requestId
+  }
+}
+
 const PROVIDER_TIMEOUT_MS = 240_000
 const CAPACITY_REQUEUE_LIMIT = 30
 const CAPACITY_REQUEUE_MAX_WAIT_MS = 7 * 60 * 1000
@@ -398,8 +408,9 @@ async function runImageGenerationForExistingRequest(params: {
   imageType?: string
   metadata?: Record<string, unknown>
   onStatus?: (message: string) => Promise<void> | void
+  singleProvider?: boolean
 }): Promise<GenerateImageOutput> {
-  const { requestId, operationId, apiKeyId, model, prompt, referenceImages, size, aspectRatio, imageType, onStatus } = params
+  const { requestId, operationId, apiKeyId, model, prompt, referenceImages, size, aspectRatio, imageType, onStatus, singleProvider = false } = params
   const mode = referenceImages.length > 0 ? 'edit' : 'generate'
   const startedAt = Date.now()
 
@@ -411,7 +422,7 @@ async function runImageGenerationForExistingRequest(params: {
   }
 
   const scoredProviders = await selectProviders(model ?? undefined)
-  const providers = scoredProviders.map(sp => sp.provider)
+  const providers = (singleProvider ? scoredProviders.slice(0, 1) : scoredProviders).map(sp => sp.provider)
 
   if (providers.length === 0) {
     const errorMessage = 'No enabled image providers are configured'
@@ -769,6 +780,10 @@ async function runImageGenerationForExistingRequest(params: {
         console.warn(`[image.generate] Circuit breaker tripped for provider ${provider.name}`)
       }
 
+      if (singleProvider) {
+        break
+      }
+
       if (index < providers.length - 1) {
         await emitStatus(`${lineName(index + 1)}失败，正在切换${lineName(index + 2)}`)
       } else {
@@ -811,7 +826,7 @@ async function runImageGenerationForExistingRequest(params: {
     },
   }).catch(() => undefined)
 
-  throw new GenerateImageRouteError(errorMessage, {
+  const routeSummary = {
     selectedLineName: '',
     selectedLineIndex: 0,
     switched: attemptedLines.length > 1,
@@ -819,7 +834,13 @@ async function runImageGenerationForExistingRequest(params: {
     userMessage: attemptedLines.length > 1
       ? '前面线路调用失败，已依次切换后备线路，但全部失败。'
       : '第一线路调用失败，且当前没有可用后备线路。',
-  })
+  }
+
+  if (singleProvider) {
+    throw new ProviderExecutionFailedError(requestId, errorMessage)
+  }
+
+  throw new GenerateImageRouteError(errorMessage, routeSummary)
 }
 
 export async function buildPersistedImageGenerationPayload(params: {
@@ -1061,4 +1082,63 @@ export async function executeQueuedImageGeneration(requestId: string) {
 
     throw error
   }
+}
+
+export async function executeSyncImageGeneration(requestId: string) {
+  const request = await prisma.imageGenerationRequest.findUnique({
+    where: { id: requestId },
+    include: {
+      assets: {
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+  })
+
+  if (!request) {
+    throw new Error(`Image generation request not found: ${requestId}`)
+  }
+
+  if (request.status === 'SUCCEEDED' || request.status === 'FAILED') {
+    return request
+  }
+
+  const payload = request.requestPayloadJson as PersistedImageGenerationPayload | null
+  if (!payload) {
+    throw new Error('Synchronous image generation request is missing requestPayloadJson')
+  }
+
+  await prisma.imageGenerationRequest.update({
+    where: { id: request.id },
+    data: {
+      status: 'PROCESSING',
+      statusMessage: '正在尝试第一线路',
+      startedAt: request.startedAt ?? new Date(),
+      queuedAt: null,
+    },
+  })
+
+  const referenceImages = await Promise.all(
+    (payload.referenceImages || []).slice(0, 16).map(loadStoredReferenceImage),
+  )
+
+  if (!request.operationId) {
+    throw new Error('Synchronous image generation request is missing operationId')
+  }
+
+  return runImageGenerationForExistingRequest({
+    requestId: request.id,
+    operationId: request.operationId,
+    apiKeyId: request.apiKeyId,
+    model: payload.model ?? null,
+    prompt: payload.prompt,
+    referenceImages,
+    size: payload.size,
+    aspectRatio: payload.aspectRatio ?? undefined,
+    imageType: payload.imageType ?? undefined,
+    metadata: payload.metadata ?? undefined,
+    onStatus: async (message) => {
+      await emitPersistedStatus(request.id, message)
+    },
+    singleProvider: true,
+  })
 }

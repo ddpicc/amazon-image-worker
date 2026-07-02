@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
 import { lookupPricingForSize, resolvePublicImageSize } from '@/lib/billing/price-service'
-import { buildSyncImageResponse } from '@/lib/image-sync-response'
+import { fenToYuan } from '@/lib/money'
 import type { RenderSize } from '@/lib/image-options'
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
-import { SubmitImageTaskError, submitBillableImageTaskSync } from '@/lib/image-task-submission'
+import { SubmitImageTaskError, submitBillableImageTaskAsync } from '@/lib/image-task-submission'
 
 const ALLOWED_MODELS = new Set(['gpt-image-2', 'agnes-image-2.1-flash'])
 const ALLOWED_QUALITIES = new Set(['low', 'medium', 'high'])
@@ -132,13 +132,13 @@ export async function POST(request: NextRequest) {
     }
 
     const totalCostFen = pricing.unitPriceFen * n
-    const submitResult = await submitBillableImageTaskSync({
+    const submitResult = await submitBillableImageTaskAsync({
       userId: auth.userId,
       apiKeyId: auth.apiKeyId,
       model,
       prompt: prompt.trim(),
       originalPrompt: prompt.trim(),
-      entryApi: 'openai-images-generations-sync',
+      entryApi: 'openai-images-generations',
       imageType: 'generate',
       aspectRatio: null,
       size: resolvedSize as RenderSize,
@@ -159,7 +159,28 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json(
-      buildSyncImageResponse(submitResult.task, submitResult.idempotent),
+      {
+        created: Math.floor(Date.now() / 1000),
+        id: submitResult.requestId,
+        model,
+        object: 'image.generation.task',
+        progress: 0,
+        status: 'pending',
+        task_info: {
+          type: 'image',
+        },
+        usage: {
+          sku: submitResult.pricingSku,
+          unit_price: fenToYuan(submitResult.unitPriceFen),
+          price_version: submitResult.priceVersion,
+          total_cost: fenToYuan(submitResult.totalCostFen),
+          unit_price_fen: submitResult.unitPriceFen,
+          total_cost_fen: submitResult.totalCostFen,
+          currency: 'CNY',
+        },
+        idempotent: submitResult.idempotent,
+      },
+      { status: 202 },
     )
   } catch (error) {
     if (error instanceof SubmitImageTaskError) {

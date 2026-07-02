@@ -12,6 +12,9 @@ interface Task {
   id: string
   prompt?: string
   status: TaskStatus
+  operation?: {
+    entryPoint?: string | null
+  } | null
   selectedProviderName?: string | null
   durationMs: number | null
   createdAt: string
@@ -41,6 +44,10 @@ interface Task {
 interface TaskAttempt {
   id: string
   providerId: string | null
+  provider?: {
+    id: string
+    name: string
+  } | null
   baseUrl: string
   model: string
   attemptIndex: number
@@ -124,6 +131,20 @@ function formatBytes(bytes: number | null | undefined): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function classifyEntryPoint(entryPoint: string | null | undefined, lang: DashboardLanguage): string {
+  if (!entryPoint) return '-'
+  if (entryPoint.includes('-sync')) {
+    return lang === 'zh' ? '同步' : 'Sync'
+  }
+  if (entryPoint.startsWith('openai-images-')) {
+    return lang === 'zh' ? '异步' : 'Async'
+  }
+  if (entryPoint === 'direct') {
+    return lang === 'zh' ? '直连' : 'Direct'
+  }
+  return entryPoint
 }
 
 function TimingGrid({ timing, lang }: { timing?: TimingSnapshot | null; lang: DashboardLanguage }) {
@@ -325,15 +346,17 @@ export default function TasksPage() {
                 <th className="px-4 py-2.5 font-medium">ID</th>
                 {user?.role === 'ADMIN' ? <th className="px-4 py-2.5 font-medium">{t('prompt')}</th> : null}
                 <th className="px-4 py-2.5 font-medium">{t('status')}</th>
+                {user?.role === 'ADMIN' ? <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '端点' : 'Endpoint'}</th> : null}
                 {user?.role === 'ADMIN' ? <th className="px-4 py-2.5 font-medium">{t('provider')}</th> : null}
                 <th className="px-4 py-2.5 font-medium">{t('apiKey')}</th>
+                {user?.role === 'ADMIN' ? <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '费用' : 'Cost'}</th> : null}
                 <th className="px-4 py-2.5 font-medium">{t('duration')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('created')}</th>
               </tr>
             </thead>
             <tbody>
               {!data || data.tasks.length === 0 ? (
-                <tr><td colSpan={user?.role === 'ADMIN' ? 8 : 6} className="px-4 py-8 text-center text-gray-400">{t('noTasksFound')}</td></tr>
+                <tr><td colSpan={user?.role === 'ADMIN' ? 10 : 6} className="px-4 py-8 text-center text-gray-400">{t('noTasksFound')}</td></tr>
               ) : data.tasks.map((task, i) => (
                 <TaskRow
                   key={task.id}
@@ -408,16 +431,18 @@ function TaskRow({
         <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{task.id.slice(0, 8)}</td>
         {isAdmin ? <td className="px-4 py-2.5 text-gray-700 max-w-[200px] truncate">{task.prompt || '-'}</td> : null}
         <td className="px-4 py-2.5"><StatusBadge status={task.status} lang={lang} /></td>
+        {isAdmin ? <td className="px-4 py-2.5 text-gray-600">{classifyEntryPoint(task.operation?.entryPoint, lang)}</td> : null}
         {isAdmin ? <td className="px-4 py-2.5 text-gray-600">{task.selectedProviderName || '-'}</td> : null}
         <td className="px-4 py-2.5 text-gray-600">
           {task.apiKey?.name ?? (task.apiKey?.keyPrefix ? `${task.apiKey.keyPrefix}...` : '-')}
         </td>
+        {isAdmin ? <td className="px-4 py-2.5 text-gray-600">{task.cost != null ? `¥${Number(task.cost).toFixed(2)}` : '-'}</td> : null}
         <td className="px-4 py-2.5 text-gray-600">{formatDuration(task.durationMs)}</td>
         <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap text-xs">{formatDate(task.createdAt)}</td>
       </tr>
       {expanded && (
         <tr className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-          <td colSpan={isAdmin ? 8 : 6} className="px-4 py-4 bg-gray-50">
+          <td colSpan={isAdmin ? 10 : 6} className="px-4 py-4 bg-gray-50">
             <div className="space-y-4 ml-4">
               {isAdmin ? (
                 <div>
@@ -446,9 +471,16 @@ function TaskRow({
                       <div key={attempt.id} className="bg-white rounded border border-gray-200 p-3 text-sm">
                         <div className="flex items-center gap-3 text-gray-600">
                           <span className="font-medium">#{attempt.attemptIndex}</span>
+                          <span>{attempt.provider?.name || attempt.providerId || attempt.baseUrl || '-'}</span>
+                          <span className="text-gray-400">·</span>
                           <span>{attempt.model}</span>
                           <StatusBadge status={attempt.status === 'STARTED' ? 'PROCESSING' : attempt.status === 'SUCCEEDED' ? 'SUCCEEDED' : 'FAILED'} lang={lang} />
                           <span className="text-xs text-gray-400">{formatDuration(attempt.durationMs)}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500 space-y-0.5">
+                          <div>Provider: {attempt.provider?.name || '-'}</div>
+                          <div>Provider ID: {attempt.providerId || '-'}</div>
+                          <div className="break-all">Base URL: {attempt.baseUrl || '-'}</div>
                         </div>
                         <div className="mt-2 space-y-2">
                           <TimingGrid timing={attempt.responseSnapshotJson?.timing} lang={lang} />

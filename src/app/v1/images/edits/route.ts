@@ -3,9 +3,10 @@ import { requireRequestAuth } from '@/lib/auth/request-auth'
 import { lookupPricingForSize, resolvePublicImageSize } from '@/lib/billing/price-service'
 import { checkBalance } from '@/lib/billing/billing-service'
 import { fenToYuan } from '@/lib/money'
+import { buildSyncImageResponse } from '@/lib/image-sync-response'
 import type { RenderSize } from '@/lib/image-options'
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
-import { SubmitImageTaskError, submitBillableImageTask } from '@/lib/image-task-submission'
+import { SubmitImageTaskError, submitBillableImageTaskSync } from '@/lib/image-task-submission'
 import { RemoteReferenceImageError, storeRemoteReferenceImages } from '@/lib/remote-reference-images'
 
 const ALLOWED_MODELS = new Set(['gpt-image-2', 'agnes-image-2.1-flash'])
@@ -184,13 +185,13 @@ export async function POST(request: NextRequest) {
 
     const storedReferenceImages = await storeRemoteReferenceImages(image)
 
-    const submitResult = await submitBillableImageTask({
+    const submitResult = await submitBillableImageTaskSync({
       userId: auth.userId,
       apiKeyId: auth.apiKeyId,
       model,
       prompt: prompt.trim(),
       originalPrompt: prompt.trim(),
-      entryApi: 'openai-images-edits',
+      entryApi: 'openai-images-edits-sync',
       imageType: 'edit',
       aspectRatio: null,
       size: resolvedSize as RenderSize,
@@ -211,28 +212,7 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json(
-      {
-        created: Math.floor(Date.now() / 1000),
-        id: submitResult.requestId,
-        model,
-        object: 'image.edit.task',
-        progress: 0,
-        status: 'pending',
-        task_info: {
-          type: 'image',
-        },
-        usage: {
-          sku: submitResult.pricingSku,
-          unit_price: fenToYuan(submitResult.unitPriceFen),
-          price_version: submitResult.priceVersion,
-          total_cost: fenToYuan(submitResult.totalCostFen),
-          unit_price_fen: submitResult.unitPriceFen,
-          total_cost_fen: submitResult.totalCostFen,
-          currency: 'CNY',
-        },
-        idempotent: submitResult.idempotent,
-      },
-      { status: 202 },
+      buildSyncImageResponse(submitResult.task, submitResult.idempotent),
     )
   } catch (error) {
     if (error instanceof RemoteReferenceImageError) {

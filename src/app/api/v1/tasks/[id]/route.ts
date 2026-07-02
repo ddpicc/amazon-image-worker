@@ -65,6 +65,13 @@ export async function GET(
         priceVersion: true,
         capacityRequeueCount: isAdmin,
         workerJobId: isAdmin,
+        operation: isAdmin
+          ? {
+              select: {
+                entryPoint: true,
+              },
+            }
+          : false,
         queuedAt: true,
         startedAt: true,
         completedAt: true,
@@ -80,6 +87,14 @@ export async function GET(
         attempts: isAdmin
           ? {
               orderBy: { attemptIndex: 'asc' },
+              include: {
+                provider: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
             }
           : false,
         assets: {
