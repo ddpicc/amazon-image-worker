@@ -51,6 +51,22 @@ interface AuditLog {
   targetUser?: { email: string } | null
 }
 
+interface CircuitBreakerEvent {
+  id: string
+  trippedAt: string
+  tripReason: string
+  attemptId: string | null
+  requestId: string | null
+  attemptIndex: number | null
+  baseUrl: string | null
+  model: string | null
+  errorType: string | null
+  errorMessage: string | null
+  durationMs: number | null
+  prompt: string | null
+  provider: { id: string; name: string; vendor: string }
+}
+
 interface DebugResponse {
   tasks: DebugTask[]
   total: number
@@ -180,6 +196,7 @@ export default function DebugPage() {
   const [query, setQuery] = useState('')
   const [tasks, setTasks] = useState<DebugTask[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
+  const [circuitBreakerEvents, setCircuitBreakerEvents] = useState<CircuitBreakerEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
@@ -196,22 +213,24 @@ export default function DebugPage() {
     setLoading(true)
     try {
       const queryParams = nextQuery ? `?q=${encodeURIComponent(nextQuery)}` : ''
-      const [failedTasksRes, auditLogsRes] = await Promise.all([
+      const [failedTasksRes, auditLogsRes, breakerEventsRes] = await Promise.all([
         fetch(`/api/v1/tasks?status=FAILED&page=${nextPage}&limit=20`, { credentials: 'include', cache: 'no-store' }),
         fetch(`/api/v1/admin/audit-logs${queryParams}`, { credentials: 'include', cache: 'no-store' }),
+        fetch('/api/v1/admin/provider-circuit-breaker-events', { credentials: 'include', cache: 'no-store' }),
       ])
 
-      if ([failedTasksRes, auditLogsRes].some((res) => res.status === 401)) {
+      if ([failedTasksRes, auditLogsRes, breakerEventsRes].some((res) => res.status === 401)) {
         router.push('/dashboard/login')
         return
       }
-      if ([failedTasksRes, auditLogsRes].some((res) => res.status === 403)) {
+      if ([failedTasksRes, auditLogsRes, breakerEventsRes].some((res) => res.status === 403)) {
         router.push('/dashboard')
         return
       }
 
       const failedTasksBody = await failedTasksRes.json().catch(() => ({}))
       const auditLogsBody = await auditLogsRes.json().catch(() => ({}))
+      const breakerEventsBody = await breakerEventsRes.json().catch(() => ({}))
       if (!failedTasksRes.ok) throw new Error(failedTasksBody.error || (lang === 'zh' ? '加载失败任务失败' : 'Failed to load failed tasks'))
       if (!auditLogsRes.ok) throw new Error(auditLogsBody.error || (lang === 'zh' ? '加载审计日志失败' : 'Failed to load audit logs'))
 
@@ -222,6 +241,7 @@ export default function DebugPage() {
         totalPages: failedTasksData.totalPages || 1,
       })
       setAuditLogs(auditLogsBody.logs || [])
+      setCircuitBreakerEvents(breakerEventsRes.ok ? breakerEventsBody.data || [] : [])
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : (lang === 'zh' ? '加载调试数据失败' : 'Failed to load debug data'))
@@ -325,6 +345,8 @@ export default function DebugPage() {
     requestSnapshot: lang === 'zh' ? '请求快照' : 'Request Snapshot',
     responseSnapshot: lang === 'zh' ? '响应快照' : 'Response Snapshot',
     generatedImages: lang === 'zh' ? '生成图片' : 'Generated Images',
+    circuitBreakerEvents: lang === 'zh' ? '熔断记录' : 'Circuit Breaker Events',
+    noCircuitBreakerEvents: lang === 'zh' ? '暂无熔断记录。后续每一次熔断都会保留导致熔断的最后一次调用。' : 'No circuit breaker events yet. Future events will retain the final triggering call.',
     auditLogs: lang === 'zh' ? '审计日志' : 'Audit Logs',
     action: lang === 'zh' ? '操作' : 'Action',
     actor: lang === 'zh' ? '操作者' : 'Actor',
@@ -562,6 +584,39 @@ export default function DebugPage() {
             )}
           </tbody>
         </table>
+      </section>
+
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-4 py-3">
+          <h3 className="font-semibold text-gray-900">{ui.circuitBreakerEvents}</h3>
+          <p className="mt-1 text-xs text-gray-500">{lang === 'zh' ? '保留触发熔断的最后一次失败调用，恢复服务后仍可查看。' : 'The last failed call that triggered each breaker is retained after service recovery.'}</p>
+        </div>
+        {circuitBreakerEvents.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-gray-400">{ui.noCircuitBreakerEvents}</p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {circuitBreakerEvents.map((event) => (
+              <article key={event.id} className="p-4">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-medium text-gray-900">{event.provider.name}</span>
+                  <StatusPill label={lang === 'zh' ? '已熔断' : 'Tripped'} tone="red" />
+                  <span className="text-xs text-gray-500">{formatDate(event.trippedAt)}</span>
+                </div>
+                <p className="mt-2 text-sm font-medium text-red-700">{event.tripReason}</p>
+                <div className="mt-3 grid gap-2 text-xs text-gray-600 md:grid-cols-2 xl:grid-cols-3">
+                  <p><span className="text-gray-500">{lang === 'zh' ? '最后调用：' : 'Final call: '}</span>{event.attemptId || '-'}</p>
+                  <p><span className="text-gray-500">{lang === 'zh' ? '任务：' : 'Task: '}</span>{event.requestId || '-'}</p>
+                  <p><span className="text-gray-500">{lang === 'zh' ? '错误类型：' : 'Error type: '}</span>{event.errorType || '-'}</p>
+                  <p><span className="text-gray-500">{lang === 'zh' ? '耗时：' : 'Duration: '}</span>{formatDuration(event.durationMs)}</p>
+                  <p className="break-all"><span className="text-gray-500">Base URL: </span>{event.baseUrl || '-'}</p>
+                  <p><span className="text-gray-500">Model: </span>{event.model || '-'}</p>
+                </div>
+                {event.errorMessage ? <p className="mt-3 break-words rounded bg-red-50 px-3 py-2 text-xs text-red-700">{event.errorMessage}</p> : null}
+                {event.prompt ? <p className="mt-2 line-clamp-3 text-xs text-gray-600"><span className="font-medium text-gray-700">{ui.prompt}: </span>{event.prompt}</p> : null}
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="flex items-center justify-between">

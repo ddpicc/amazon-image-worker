@@ -773,9 +773,9 @@ async function runImageGenerationForExistingRequest(params: {
 
       // Smart routing: mark failure, apply graduated cooldown, check circuit breaker
       await markProviderFailure(provider.id, attemptDuration)
-      await applyCooldown(provider.id, errorType, provider.consecutiveFailures)
+      const cooldown = await applyCooldown(provider.id, errorType, provider.consecutiveFailures, attempt.id)
       releaseProviderSlot(provider.id)
-      const breakerTripped = await checkCircuitBreaker(provider.id)
+      const breakerTripped = cooldown.disabled || await checkCircuitBreaker(provider.id, attempt.id)
       if (breakerTripped) {
         console.warn(`[image.generate] Circuit breaker tripped for provider ${provider.name}`)
       }

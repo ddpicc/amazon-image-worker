@@ -194,6 +194,12 @@ export async function updateProvider(id: string, data: {
   const updateData = {
     ...data,
     ...(data.baseUrl ? { baseUrl: normalizeProviderBaseUrl(data.baseUrl) } : {}),
+    ...(data.enabled === true ? {
+      circuitBreakerTrippedAt: null,
+      circuitBreakerTripReason: null,
+      consecutiveFailures: 0,
+      cooldownUntil: null,
+    } : {}),
   }
 
   return prisma.imageProvider.update({

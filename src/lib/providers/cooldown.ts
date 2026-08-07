@@ -1,5 +1,6 @@
 import { ErrorType } from '@prisma/client'
 import { prisma } from '../db/prisma'
+import { tripCircuitBreaker } from './circuit-breaker'
 
 // Cooldown schedules: [1st failure, 2nd, 3rd+] in minutes
 const COOLDOWN_SCHEDULES: Record<ErrorType, number[]> = {
@@ -15,6 +16,7 @@ export async function applyCooldown(
   providerId: string,
   errorType: ErrorType,
   consecutiveFailures: number,
+  attemptId?: string,
 ): Promise<{ disabled: boolean; cooldownMinutes: number }> {
   const schedule = COOLDOWN_SCHEDULES[errorType]
 
@@ -22,13 +24,12 @@ export async function applyCooldown(
   if (errorType === 'AUTH_FAILURE') {
     await prisma.imageProvider.update({
       where: { id: providerId },
-      data: {
-        enabled: false,
-        consecutiveFailures: consecutiveFailures + 1,
-        lastFailureAt: new Date(),
-        circuitBreakerTripReason: `Authentication failure — provider disabled automatically`,
-        circuitBreakerTrippedAt: new Date(),
-      },
+      data: { consecutiveFailures: consecutiveFailures + 1, lastFailureAt: new Date() },
+    })
+    await tripCircuitBreaker({
+      providerId,
+      attemptId,
+      reason: 'Authentication failure — provider disabled automatically',
     })
     return { disabled: true, cooldownMinutes: 0 }
   }

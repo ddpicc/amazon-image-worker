@@ -172,9 +172,15 @@ export default function ProvidersPage() {
     })
   }, [fetchProviders, router])
 
-  async function toggleEnabled(p: Provider) {
+  async function toggleProviderState(p: Provider) {
     setActionLoading(p.id)
     try {
+      if (p.circuitBreakerTrippedAt) {
+        const res = await fetch(`/api/v1/providers/${p.id}/reset-breaker`, { method: 'POST' })
+        if (res.ok) await fetchProviders()
+        return
+      }
+
       const res = await fetch(`/api/v1/providers/${p.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -213,23 +219,6 @@ export default function ProvidersPage() {
         setShowSecretModal(true)
       } else {
         alert(body.error || (lang === 'zh' ? '加载 Provider API Key 失败' : 'Failed to load provider API key'))
-      }
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  async function resetBreaker(p: Provider) {
-    setActionLoading(p.id)
-    try {
-      const res = await fetch(`/api/v1/providers/${p.id}/reset-breaker`, {
-        method: 'POST',
-      })
-      if (res.ok) {
-        await fetchProviders()
-      } else {
-        const body = await res.json().catch(() => ({}))
-        alert(body.error || (lang === 'zh' ? '重置熔断器失败' : 'Failed to reset breaker'))
       }
     } finally {
       setActionLoading(null)
@@ -385,10 +374,7 @@ export default function ProvidersPage() {
                         <td className="px-4 py-2.5 text-gray-600">${p.estimatedCostPerReq.toFixed(4)}</td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-1">
-                            <button onClick={() => toggleEnabled(p)} disabled={actionLoading === p.id} title={p.enabled ? (lang === 'zh' ? '禁用' : 'Disable') : (lang === 'zh' ? '启用' : 'Enable')} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50">{p.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}</button>
-                            {p.circuitBreakerTrippedAt && (
-                              <button onClick={() => resetBreaker(p)} disabled={actionLoading === p.id} title={lang === 'zh' ? '重置熔断器' : 'Reset breaker'} className="p-1 rounded hover:bg-emerald-50 text-gray-500 hover:text-emerald-700 disabled:opacity-50"><RotateCcw className="w-3.5 h-3.5" /></button>
-                            )}
+                            <button onClick={() => toggleProviderState(p)} disabled={actionLoading === p.id} title={p.circuitBreakerTrippedAt ? (lang === 'zh' ? '恢复服务' : 'Restore service') : p.enabled ? (lang === 'zh' ? '禁用' : 'Disable') : (lang === 'zh' ? '启用' : 'Enable')} className={`p-1 rounded disabled:opacity-50 ${p.circuitBreakerTrippedAt ? 'text-emerald-700 hover:bg-emerald-50' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}>{p.circuitBreakerTrippedAt ? <RotateCcw className="w-3.5 h-3.5" /> : p.enabled ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}</button>
                             <button onClick={() => movePriority(p, 'up')} disabled={actionLoading === p.id} title={lang === 'zh' ? '上移' : 'Move up'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowUp className="w-3.5 h-3.5" /></button>
                             <button onClick={() => movePriority(p, 'down')} disabled={actionLoading === p.id} title={lang === 'zh' ? '下移' : 'Move down'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50"><ArrowDown className="w-3.5 h-3.5" /></button>
                             <button onClick={() => openEdit(p)} title={lang === 'zh' ? '编辑' : 'Edit'} className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"><Pencil className="w-3.5 h-3.5" /></button>

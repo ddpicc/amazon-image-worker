@@ -123,7 +123,7 @@ function providerStateBadgeClass(state: ReturnType<typeof getProviderState>): st
   }
 }
 
-const DEFAULT_PROMPT = '一位女性身穿半透明丝质面料的 editorial 风格人像，硬朗电影感主光，35mm 胶片颗粒，冷中性色调，杂志封面质感。'
+const DEFAULT_PROMPT = 'A premium red ceramic coffee mug on a light oak table, soft morning window light, clean minimal composition, realistic product photography, no text, no logo, square image.'
 const DEFAULT_EDIT_PROMPT = 'Transform the scene into a rain-soaked cyberpunk night with neon reflections'
 const DEFAULT_REFERENCE_IMAGE = 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/300px-PNG_transparency_demonstration_1.png'
 
@@ -601,7 +601,7 @@ export default function AdminTestImagePage() {
                   )
                 })}
               </select>
-              <p className="mt-1 text-xs text-gray-500">{lang === 'zh' ? '直连模式会绕过内部队列和 worker，直接调用选中的 provider。' : 'Direct mode bypasses internal enqueue/worker and calls the selected provider directly.'}</p>
+              <p className="mt-1 text-xs text-gray-500">{lang === 'zh' ? '直连模式会绕过内部队列和 Worker，可测试正常、冷却、禁用或已熔断的供应商；测试成功后可在结果中一键激活。' : 'Direct mode bypasses the queue and Worker. It can test enabled, cooling, disabled, or tripped providers; successful tests can restore service in one click.'}</p>
             </div>
           )}
 
@@ -1024,17 +1024,17 @@ export default function AdminTestImagePage() {
             </div>
           )}
 
-          {(getProviderState(directResult.provider) === 'TRIPPED' || getProviderState(directResult.provider) === 'DISABLED') && (
-            <div className="flex items-center gap-3">
+          {(getProviderState(directResult.provider) === 'TRIPPED' || getProviderState(directResult.provider) === 'DISABLED' || getProviderState(directResult.provider) === 'COOLDOWN') && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
               <button
                 type="button"
                 onClick={handleResetBreaker}
                 disabled={resettingBreaker}
-                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="min-h-11 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
-                {resettingBreaker ? (lang === 'zh' ? '重置中...' : 'Resetting...') : (lang === 'zh' ? '重置熔断器' : 'Reset breaker')}
+                {resettingBreaker ? (lang === 'zh' ? '激活中...' : 'Activating...') : (lang === 'zh' ? '一键激活供应商' : 'Activate provider')}
               </button>
-              <span className="text-xs text-gray-500">{lang === 'zh' ? '测试已成功，可以手动将该供应商恢复到服务状态。' : 'Test succeeded. You can manually restore this provider to service.'}</span>
+              <span className="text-xs text-emerald-800">{lang === 'zh' ? '测试成功。激活会清除熔断和冷却状态，使供应商重新参与路由。' : 'Test succeeded. Activation clears breaker and cooldown state so the provider can rejoin routing.'}</span>
             </div>
           )}
 

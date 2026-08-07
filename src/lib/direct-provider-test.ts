@@ -192,6 +192,9 @@ export interface DirectProviderTestResult {
     baseUrl: string
     model: string
     enabled: boolean
+    cooldownUntil: Date | null
+    circuitBreakerTrippedAt: Date | null
+    circuitBreakerTripReason: string | null
   }
   mode: 'generate' | 'edit'
   prompt: string
@@ -215,10 +218,6 @@ export async function testImageProviderDirect(params: {
   const provider = await getProvider(params.providerId)
   if (!provider) {
     throw new Error('Provider not found')
-  }
-
-  if (!provider.enabled) {
-    throw new Error('Provider is disabled')
   }
 
   const imageUrls = (params.imageUrls || []).slice(0, 16)
@@ -279,6 +278,9 @@ export async function testImageProviderDirect(params: {
         baseUrl: getProviderBaseUrl(provider.baseUrl),
         model: provider.model,
         enabled: provider.enabled,
+        cooldownUntil: provider.cooldownUntil,
+        circuitBreakerTrippedAt: provider.circuitBreakerTrippedAt,
+        circuitBreakerTripReason: provider.circuitBreakerTripReason,
       },
       mode,
       prompt: params.prompt,

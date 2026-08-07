@@ -202,11 +202,32 @@ model ImageProvider {
   attempts                 ImageGenerationAttempt[]
   requests                 ImageGenerationRequest[]
   statsSnapshots           ProviderStatsSnapshot[]
+  circuitBreakerEvents     ProviderCircuitBreakerEvent[]
   alertRules               AlertRule[]
   alertEvents              AlertEvent[]
 
   @@index([enabled, priority])
   @@index([cooldownUntil])
+}
+
+model ProviderCircuitBreakerEvent {
+  id           String        @id @default(cuid())
+  providerId   String
+  provider     ImageProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  trippedAt    DateTime      @default(now())
+  tripReason   String
+  attemptId    String?
+  requestId    String?
+  attemptIndex Int?
+  baseUrl      String?
+  model        String?
+  errorType    ErrorType?
+  errorMessage String?
+  durationMs   Int?
+  prompt       String?
+
+  @@index([providerId, trippedAt(sort: Desc)])
+  @@index([trippedAt(sort: Desc)])
 }
 
 // ============================================================
