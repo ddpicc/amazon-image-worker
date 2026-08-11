@@ -5,9 +5,11 @@ export type RenderSize =
   | '2048x1365'
   | '1024x1536'
   | '1365x2048'
+  | '1152x1536'
+  | '1152x1920'
   | '1536x960'
   | '1024x640'
-export type AspectRatio = '1:1' | '3:2' | '2:3' | '8:5'
+export type AspectRatio = '1:1' | '3:2' | '2:3' | '3:4' | '3:5' | '8:5'
 
 export const HIDDEN_APLUS_RENDER_SIZE = '1536x960' as const
 const HIDDEN_APLUS_PROMPT_REQUIREMENT = '补充执行要求：输出为 1536x960 的横版画面，保持 8:5 构图。'
@@ -57,6 +59,18 @@ export const SIZE_OPTIONS: SizeOption[] = [
     aspectRatio: '2:3',
   },
   {
+    value: '1152x1536',
+    label: '1152 × 1536',
+    note: 'Portrait 3:4 output; both dimensions are divisible by 16',
+    aspectRatio: '3:4',
+  },
+  {
+    value: '1152x1920',
+    label: '1152 × 1920',
+    note: 'Portrait 3:5 output; both dimensions are divisible by 16',
+    aspectRatio: '3:5',
+  },
+  {
     value: '1024x640',
     label: '1024 × 640',
     note: 'Landscape output for Amazon A+ modular layouts',
@@ -83,6 +97,16 @@ export const ASPECT_RATIO_OPTIONS: Array<{
     value: '2:3',
     label: '2:3',
     description: 'Taller portrait composition',
+  },
+  {
+    value: '3:4',
+    label: '3:4',
+    description: 'Portrait composition',
+  },
+  {
+    value: '3:5',
+    label: '3:5',
+    description: 'Tall portrait composition',
   },
 ]
 
