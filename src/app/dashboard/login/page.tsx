@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { useDashboardI18n } from '@/lib/dashboard/i18n'
+import EmailCodeForm from '@/components/auth/email-code-form'
 
 export default function LoginPage() {
   const { t } = useDashboardI18n()
@@ -10,6 +11,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [needsVerification, setNeedsVerification] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -22,11 +24,13 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
+      const body = await res.json().catch(() => ({}))
 
       if (res.ok) {
         window.location.href = '/dashboard'
+      } else if (body.needsVerification) {
+        setNeedsVerification(true)
       } else {
-        const body = await res.json().catch(() => ({}))
         setError(body.error || t('invalidCredentials'))
       }
     } catch {
@@ -42,56 +46,73 @@ export default function LoginPage() {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-gray-900">{t('appName')}</h1>
-            <p className="text-sm text-gray-500 mt-1">{t('loginSubtitle')}</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {needsVerification ? '完成邮箱验证后即可登录' : t('loginSubtitle')}
+            </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="you@example.com"
-                required
-                autoFocus
-              />
-            </div>
+          {needsVerification ? (
+            <EmailCodeForm
+              email={email.trim().toLowerCase()}
+              onVerified={() => {
+                window.location.href = '/dashboard'
+              }}
+              onBack={() => {
+                setNeedsVerification(false)
+                setError('')
+              }}
+            />
+          ) : (
+            <>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="you@example.com"
+                    required
+                    autoFocus
+                  />
+                </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">{t('password')}</label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={t('enterPassword')}
-                required
-              />
-            </div>
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">{t('password')}</label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder={t('enterPassword')}
+                    required
+                  />
+                </div>
 
-            {error && (
-              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
-            )}
+                {error && (
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
+                )}
 
-            <button
-              type="submit"
-              disabled={loading || !email || !password}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-            >
-              {loading ? t('signingIn') : t('signIn')}
-            </button>
-          </form>
+                <button
+                  type="submit"
+                  disabled={loading || !email || !password}
+                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {loading ? t('signingIn') : t('signIn')}
+                </button>
+              </form>
 
-          <p className="mt-4 text-sm text-center text-gray-500">
-            {t('registerLinkLead')}{' '}
-            <Link href="/dashboard/register" className="text-blue-600 hover:text-blue-700 font-medium">
-              {t('register')}
-            </Link>
-          </p>
+              <p className="mt-4 text-sm text-center text-gray-500">
+                {t('registerLinkLead')}{' '}
+                <Link href="/dashboard/register" className="text-blue-600 hover:text-blue-700 font-medium">
+                  {t('register')}
+                </Link>
+              </p>
+            </>
+          )}
         </div>
       </div>
     </div>

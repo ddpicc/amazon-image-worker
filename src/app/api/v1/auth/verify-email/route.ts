@@ -1,51 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
-import { verifyPassword } from '@/lib/auth/password'
 import { createSession, getSessionCookieOptions, SESSION_COOKIE_NAME } from '@/lib/auth/session'
-import { ensureBootstrapAdmin } from '@/lib/auth/bootstrap-admin'
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
+import { verifyEmailCode } from '@/lib/auth/email-verification'
 
 export async function POST(request: NextRequest) {
   try {
     const rateLimitResponse = await enforceRateLimit(request, {
-      key: `auth:login:${getClientIp(request)}`,
+      key: `auth:verify-email:${getClientIp(request)}`,
       limit: 20,
       windowSeconds: 15 * 60,
     })
     if (rateLimitResponse) return rateLimitResponse
 
-    await ensureBootstrapAdmin()
-
-    const { email, password } = await request.json()
+    const { email, code } = await request.json()
 
     if (!email || typeof email !== 'string') {
       return NextResponse.json({ error: '请输入邮箱' }, { status: 400 })
     }
-
-    if (!password || typeof password !== 'string') {
-      return NextResponse.json({ error: '请输入密码' }, { status: 400 })
+    if (!code || typeof code !== 'string' || !/^\d{6}$/.test(code.trim())) {
+      return NextResponse.json({ error: '请输入 6 位数字验证码' }, { status: 400 })
     }
 
     const normalizedEmail = email.trim().toLowerCase()
-    const user = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    })
 
+    const result = await verifyEmailCode(normalizedEmail, code)
+    if (!result.ok) {
+      const messages = {
+        invalid: '验证码错误',
+        expired: '验证码已过期，请重新发送',
+        tooManyAttempts: '尝试次数过多，请重新发送验证码',
+      } as const
+      return NextResponse.json({ error: messages[result.reason] }, { status: 400 })
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } })
     if (!user || !user.enabled) {
-      return NextResponse.json({ error: '账号或密码错误' }, { status: 401 })
+      return NextResponse.json({ error: '账号不存在或已被禁用' }, { status: 404 })
     }
 
-    const valid = await verifyPassword(password, user.passwordHash)
-    if (!valid) {
-      return NextResponse.json({ error: '账号或密码错误' }, { status: 401 })
-    }
-
-    if (!user.emailVerifiedAt) {
-      return NextResponse.json(
-        { error: '该邮箱尚未验证，请先完成邮箱验证', needsVerification: true },
-        { status: 403 },
-      )
-    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerifiedAt: new Date() },
+    })
 
     const { token } = await createSession(user.id)
     const response = NextResponse.json({

@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { fetchCurrentUser, type DashboardUser } from '@/lib/dashboard/auth'
-import { paymentStatusLabel, taskStatusLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
+import { paymentStatusLabel, taskStatusLabel, useDashboardI18n, type DashboardLanguage } from '@/lib/dashboard/i18n'
 
 type TaskStatus = 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
 
@@ -60,7 +60,7 @@ interface ApiKeyOption {
   keyPrefix: string
 }
 
-function StatusBadge({ status, lang }: { status: TaskStatus; lang: 'en' | 'zh' }) {
+function StatusBadge({ status, lang }: { status: TaskStatus; lang: DashboardLanguage }) {
   const styles: Record<TaskStatus, string> = {
     QUEUED: 'bg-gray-100 text-gray-800',
     PROCESSING: 'bg-yellow-100 text-yellow-800',
@@ -353,18 +353,6 @@ export default function ActivityPage() {
                                             ? `此任务已成功完成，共生成 ${assets.length} 张图片。`
                                             : `This task completed successfully with ${assets.length} generated image${assets.length === 1 ? '' : 's'}.`}
                                   </div>
-                                  {assets.length > 0 ? (
-                                    <div>
-                                      <h4 className="mb-1 text-xs font-medium uppercase text-gray-500">{t('generatedImages')}</h4>
-                                      <div className="flex flex-wrap gap-3">
-                                        {assets.map((asset) => (
-                                          <a key={asset.id} href={asset.cosUrl} target="_blank" rel="noopener noreferrer">
-                                            <img src={asset.cosUrl} alt={`Generated image ${asset.id.slice(0, 8)}`} className="h-32 w-32 rounded border border-gray-200 object-cover hover:opacity-80" />
-                                          </a>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ) : null}
                                 </div>
                               )}
                             </td>

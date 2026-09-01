@@ -20,7 +20,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { lang, setLang, t } = useDashboardI18n()
+  const { lang, t } = useDashboardI18n()
   const [user, setUser] = useState<DashboardUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -53,14 +53,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   }, [isAuthPage, router])
 
   if (isAuthPage) {
-    return (
-      <div className="relative">
-        <div className="absolute right-4 top-4 z-10">
-          <LanguageToggle />
-        </div>
-        {children}
-      </div>
-    )
+    return <div className="relative">{children}</div>
   }
 
   if (loading || !user) {
@@ -155,10 +148,9 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
               })}
             </nav>
             <div className="mt-6 border-t border-gray-800 pt-4">
-              <LanguageToggle compact />
               <button
                 onClick={() => logout()}
-                className="mt-4 min-h-11 w-full rounded bg-gray-800 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-700"
+                className="min-h-11 w-full rounded bg-gray-800 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-700"
               >
                 {t('signOut')}
               </button>
@@ -197,35 +189,8 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         </button>
       </aside>
       <main className="min-w-0 flex-1 overflow-auto p-4 sm:p-6">
-        <div className="mb-6 hidden justify-end lg:flex">
-          <LanguageToggle />
-        </div>
         {children}
       </main>
-    </div>
-  )
-}
-
-function LanguageToggle({ compact = false }: { compact?: boolean }) {
-  const { lang, setLang, t } = useDashboardI18n()
-
-  return (
-    <div className={`inline-flex items-center gap-1 rounded-lg border p-1 text-sm shadow-sm ${compact ? 'w-full border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
-      <span className={`px-2 ${compact ? 'text-gray-300' : 'text-gray-500'}`}>{t('language')}</span>
-      <button
-        type="button"
-        onClick={() => setLang('en')}
-        className={`min-h-9 rounded-md px-3 py-1.5 transition-colors ${lang === 'en' ? 'bg-blue-600 text-white' : compact ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`}
-      >
-        {t('english')}
-      </button>
-      <button
-        type="button"
-        onClick={() => setLang('zh')}
-        className={`min-h-9 rounded-md px-3 py-1.5 transition-colors ${lang === 'zh' ? 'bg-blue-600 text-white' : compact ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`}
-      >
-        {t('chinese')}
-      </button>
     </div>
   )
 }
