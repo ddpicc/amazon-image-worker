@@ -1,5 +1,6 @@
 import { encryptSecret } from './crypto'
 import { prisma } from './db/prisma'
+import { normalizePublicImageModel } from './image-models'
 
 const PROVIDER_COOLDOWN_MINUTES = 5
 const PROVIDER_NAME_MAX_LENGTH = 64
@@ -97,7 +98,9 @@ export async function createImageProvider(input: {
   name: string
   vendor: string
   baseUrl: string
+  publicModel: string
   model: string
+  supports2k?: boolean
   priority: number
   enabled?: boolean
   apiKey: string
@@ -105,6 +108,7 @@ export async function createImageProvider(input: {
   const name = normalizeText(input.name, 'name', PROVIDER_NAME_MAX_LENGTH)
   const vendor = normalizeText(input.vendor, 'vendor', PROVIDER_VENDOR_MAX_LENGTH)
   const baseUrl = normalizeBaseUrl(input.baseUrl)
+  const publicModel = normalizePublicImageModel(normalizeText(input.publicModel, 'publicModel', PROVIDER_MODEL_MAX_LENGTH))
   const model = normalizeText(input.model, 'model', PROVIDER_MODEL_MAX_LENGTH)
   const priority = normalizePriority(input.priority)
   const apiKeyCiphertext = encryptSecret(normalizeApiKey(input.apiKey))
@@ -115,7 +119,9 @@ export async function createImageProvider(input: {
       name,
       vendor,
       baseUrl,
+      publicModel,
       model,
+      supports2k: input.supports2k ?? false,
       priority,
       enabled,
       apiKeyCiphertext,

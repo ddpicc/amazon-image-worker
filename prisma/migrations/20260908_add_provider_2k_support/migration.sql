@@ -1,0 +1,2 @@
+ALTER TABLE "ImageProvider"
+ADD COLUMN "supports2k" BOOLEAN NOT NULL DEFAULT true;

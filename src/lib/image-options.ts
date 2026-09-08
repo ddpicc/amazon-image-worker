@@ -1,15 +1,29 @@
-export type RenderSize =
-  | '1024x1024'
-  | '2048x2048'
-  | '1536x1024'
-  | '2048x1365'
-  | '1024x1536'
-  | '1365x2048'
-  | '1152x1536'
-  | '1152x1920'
-  | '1536x960'
-  | '1024x640'
+export type RenderSize = string
 export type AspectRatio = '1:1' | '3:2' | '2:3' | '3:4' | '3:5' | '8:5'
+
+// OpenAI's guide describes outputs above 2560x1440 total pixels as typically
+// 2K. Keep this threshold shared by routing and billing.
+export function is2KRenderSize(size: string): boolean {
+  const match = size.trim().toLowerCase().match(/^(\d+)x(\d+)$/)
+  if (!match) return false
+  return Number(match[1]) * Number(match[2]) > 2560 * 1440
+}
+
+export function isValidOfficialRenderSize(size: string): boolean {
+  const match = size.trim().toLowerCase().match(/^(\d+)x(\d+)$/)
+  if (!match) return false
+  const width = Number(match[1])
+  const height = Number(match[2])
+  const pixels = width * height
+  const longEdge = Math.max(width, height)
+  const shortEdge = Math.min(width, height)
+  return width % 16 === 0
+    && height % 16 === 0
+    && longEdge <= 3840
+    && longEdge / shortEdge <= 3
+    && pixels >= 655_360
+    && pixels <= 8_294_400
+}
 
 export const HIDDEN_APLUS_RENDER_SIZE = '1536x960' as const
 const HIDDEN_APLUS_PROMPT_REQUIREMENT = '补充执行要求：输出为 1536x960 的横版画面，保持 8:5 构图。'

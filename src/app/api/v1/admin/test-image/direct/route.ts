@@ -1,20 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdminRequest } from '@/lib/auth/request-auth'
 import { testImageProviderDirect } from '@/lib/direct-provider-test'
+import { isValidOfficialRenderSize } from '@/lib/image-options'
 import type { RenderSize } from '@/lib/image-options'
-
-const ALLOWED_SIZES = new Set<RenderSize>([
-  '1024x1024',
-  '2048x2048',
-  '1536x1024',
-  '2048x1365',
-  '1024x1536',
-  '1365x2048',
-  '1152x1536',
-  '1152x1920',
-  '1536x960',
-  '1024x640',
-])
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,7 +31,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'prompt exceeds 32000 characters' }, { status: 400 })
     }
 
-    if (!ALLOWED_SIZES.has(size)) {
+    if (typeof size !== 'string' || !isValidOfficialRenderSize(size)) {
       return NextResponse.json({ error: 'Unsupported size' }, { status: 400 })
     }
 

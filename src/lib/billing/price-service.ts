@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db/prisma'
 import { fenToYuan } from '@/lib/money'
+import { is2KRenderSize, isValidOfficialRenderSize } from '@/lib/image-options'
 
 export type PricingSkuCode = 'image_1k' | 'image_2k'
 
@@ -8,18 +9,16 @@ const DEFAULT_SKU_PRICES: Array<{ sku: PricingSkuCode; label: string; priceFen: 
   { sku: 'image_2k', label: 'Image 2K', priceFen: 60 },
 ]
 
-const RATIO_SIZE_MAP: Record<string, string> = {
-  '1:1': '1024x1024',
-  '3:2': '1536x1024',
-  '2:3': '1024x1536',
-  '3:4': '1152x1536',
-  '3:5': '1152x1920',
-  '2:1': '1024x640',
-  '8:5': '1024x640',
-  '16:9': '1536x960',
+const PUBLIC_SKUS: PricingSkuCode[] = ['image_1k', 'image_2k']
+
+export interface PublicPriceRow {
+  sku: PricingSkuCode
+  label: string
+  priceFen: number
+  enabled: boolean
 }
 
-const VALID_PIXEL_SIZES = new Set([
+export const COMMON_SIZE_EXAMPLES = new Set([
   '1024x1024', '2048x2048',
   '1536x1024', '2048x1365',
   '1024x1536', '1365x2048',
@@ -27,27 +26,23 @@ const VALID_PIXEL_SIZES = new Set([
   '1536x960', '1024x640',
 ])
 
-export function resolvePublicImageSize(sizeParam: string): string | null {
-  if (!sizeParam || sizeParam === 'auto') {
-    return '1024x1024'
-  }
+export function resolvePublicImageSize(sizeParam: unknown): string | null {
+  if (typeof sizeParam !== 'string') return null
+  const trimmed = sizeParam.trim()
+  if (!trimmed) return null
 
-  const normalized = sizeParam.replace('×', 'x').toLowerCase()
-  if (VALID_PIXEL_SIZES.has(normalized)) {
+  const normalized = trimmed.replace(/×/g, 'x').toLowerCase()
+  if (isValidOfficialRenderSize(normalized)) {
     return normalized
   }
 
-  if (/^\d+x\d+$/.test(normalized)) {
-    return null
-  }
-
-  return RATIO_SIZE_MAP[normalized] || RATIO_SIZE_MAP[sizeParam] || null
+  return null
 }
 
 export function resolvePricingSkuForSize(size: string): PricingSkuCode | null {
-  const normalized = size.replace('×', 'x').toLowerCase()
-  if (!VALID_PIXEL_SIZES.has(normalized)) return null
-  return normalized.includes('2048') ? 'image_2k' : 'image_1k'
+  const normalized = size.trim().replace(/×/g, 'x').toLowerCase()
+  if (!isValidOfficialRenderSize(normalized)) return null
+  return is2KRenderSize(normalized) ? 'image_2k' : 'image_1k'
 }
 
 export async function ensureDefaultPricingSkus(updatedBy?: string) {
@@ -160,5 +155,30 @@ export async function lookupPricingForSize(size: string): Promise<{
     unitPriceFen: row.priceFen,
     unitPrice: fenToYuan(row.priceFen),
     priceVersion: row.version,
+  }
+}
+
+export function resolvePricingTierForSize(size: string): PricingSkuCode {
+  return is2KRenderSize(size) ? 'image_2k' : 'image_1k'
+}
+
+export async function listPublicPrices(): Promise<PublicPriceRow[]> {
+  const fallback = DEFAULT_SKU_PRICES.map((row) => ({ ...row, enabled: true }))
+
+  try {
+    const rows = await prisma.pricingSku.findMany({
+      where: { sku: { in: PUBLIC_SKUS } },
+      orderBy: { sku: 'asc' },
+    })
+    if (rows.length === 0) return fallback
+
+    return rows.map((row) => ({
+      sku: row.sku as PricingSkuCode,
+      label: row.label,
+      priceFen: row.priceFen,
+      enabled: row.enabled,
+    }))
+  } catch {
+    return fallback
   }
 }

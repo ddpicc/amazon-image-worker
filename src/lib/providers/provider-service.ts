@@ -2,7 +2,8 @@ import { ImageProvider, Prisma } from '@prisma/client'
 import { prisma } from '../db/prisma'
 import { encryptSecret } from '../crypto'
 import { scoreProviders, ScoredProvider, ProviderRollingStats, DEFAULT_WEIGHTS, ScoringWeights } from './provider-scoring'
-import { getCompatibleImageProviderModels } from '../image-models'
+import { normalizePublicImageModel } from '../image-models'
+import { is2KRenderSize } from '../image-options'
 
 // --- Per-Provider Concurrency Tracking ---
 
@@ -43,16 +44,30 @@ function normalizeProviderBaseUrl(baseUrl: string): string {
   return url.toString().replace(/\/+$/, '')
 }
 
+function normalizeProviderPublicModel(publicModel: string): string {
+  const normalized = normalizePublicImageModel(publicModel)
+  if (!normalized) throw new Error('publicModel is required')
+  return normalized
+}
+
+function normalizeProviderUpstreamModel(model: string): string {
+  const normalized = model.trim()
+  if (!normalized) throw new Error('model is required')
+  return normalized
+}
+
 // --- Provider Selection (Smart Routing) ---
 
-export async function selectProviders(model?: string | null, weights?: ScoringWeights): Promise<ScoredProvider[]> {
+export async function selectProviders(model?: string | null, size?: string | null, weights?: ScoringWeights): Promise<ScoredProvider[]> {
   const now = new Date()
 
-  // Fetch all enabled providers, optionally filtered by compatible models
+  // Every enabled provider mapped to the requested public model participates.
   const where: Prisma.ImageProviderWhereInput = { enabled: true }
-  const compatibleModels = getCompatibleImageProviderModels(model)
-  if (compatibleModels && compatibleModels.length > 0) {
-    where.model = { in: compatibleModels }
+  if (model) {
+    where.publicModel = normalizePublicImageModel(model)
+  }
+  if (typeof size === 'string' && is2KRenderSize(size)) {
+    where.supports2k = true
   }
 
   const providers = await prisma.imageProvider.findMany({
@@ -160,7 +175,9 @@ export async function createProvider(data: {
   name: string
   vendor: string
   baseUrl: string
+  publicModel: string
   model: string
+  supports2k?: boolean
   priority?: number
   apiKeyPlaintext: string
   estimatedCostPerReq?: number
@@ -172,7 +189,9 @@ export async function createProvider(data: {
       name: data.name,
       vendor: data.vendor,
       baseUrl: normalizeProviderBaseUrl(data.baseUrl),
-      model: data.model,
+      publicModel: normalizeProviderPublicModel(data.publicModel),
+      model: normalizeProviderUpstreamModel(data.model),
+      supports2k: data.supports2k ?? false,
       priority: data.priority ?? 100,
       apiKeyCiphertext,
       estimatedCostPerReq: data.estimatedCostPerReq ?? 0,
@@ -185,7 +204,9 @@ export async function updateProvider(id: string, data: {
   name?: string
   vendor?: string
   baseUrl?: string
+  publicModel?: string
   model?: string
+  supports2k?: boolean
   priority?: number
   enabled?: boolean
   estimatedCostPerReq?: number
@@ -194,6 +215,8 @@ export async function updateProvider(id: string, data: {
   const updateData = {
     ...data,
     ...(data.baseUrl ? { baseUrl: normalizeProviderBaseUrl(data.baseUrl) } : {}),
+    ...(data.publicModel !== undefined ? { publicModel: normalizeProviderPublicModel(data.publicModel) } : {}),
+    ...(data.model !== undefined ? { model: normalizeProviderUpstreamModel(data.model) } : {}),
     ...(data.enabled === true ? {
       circuitBreakerTrippedAt: null,
       circuitBreakerTripReason: null,

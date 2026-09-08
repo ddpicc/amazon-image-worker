@@ -63,6 +63,13 @@ function publicErrorFromMessage(message: string | null | undefined) {
   }
 }
 
+function getPublicModel(task: ImageTaskWithAssets): string | undefined {
+  const payload = task.requestPayloadJson
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined
+  const model = (payload as Record<string, unknown>).model
+  return typeof model === 'string' ? model : undefined
+}
+
 export function buildImageTaskResponse(task: ImageTaskWithAssets) {
   const created = Math.floor(task.createdAt.getTime() / 1000)
   const publicStatus = mapStatus(task.status)
@@ -89,7 +96,7 @@ export function buildImageTaskResponse(task: ImageTaskWithAssets) {
   return {
     created,
     id: task.id,
-    model: task.selectedProviderModel || 'gpt-image-2',
+    model: getPublicModel(task) || task.selectedProviderModel || undefined,
     object: task.imageType === 'edit' ? 'image.edit.task' : 'image.generation.task',
     progress,
     status: publicStatus,

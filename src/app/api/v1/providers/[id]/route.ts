@@ -47,11 +47,13 @@ export async function PUT(
     const { id } = await params
 
     const body = await request.json()
-    const { name, vendor, baseUrl, model, priority, enabled, estimatedCostPerReq, maxConcurrent } = body as {
+    const { name, vendor, baseUrl, publicModel, model, supports2k, priority, enabled, estimatedCostPerReq, maxConcurrent } = body as {
       name?: string
       vendor?: string
       baseUrl?: string
+      publicModel?: string
       model?: string
+      supports2k?: boolean
       priority?: number
       enabled?: boolean
       estimatedCostPerReq?: number
@@ -62,7 +64,9 @@ export async function PUT(
       name,
       vendor,
       baseUrl,
+      publicModel,
       model,
+      supports2k,
       priority,
       enabled,
       estimatedCostPerReq,

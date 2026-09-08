@@ -1,33 +1,36 @@
-const GPT_IMAGE_2_MODEL_ALIASES = new Set([
-  'gpt-image-2',
-  'gpt-image2-1k',
-  'gpt-image-2-1k',
-])
+import { prisma } from './db/prisma'
+export function normalizePublicImageModel(model: string): string {
+  return model.trim().toLowerCase()
+}
 
+// Upstream names are not aliased here; this normalization is only for
+// model-specific adapter capability checks.
 export function normalizeImageModel(model: string): string {
-  const normalized = model.trim().toLowerCase()
-  if (GPT_IMAGE_2_MODEL_ALIASES.has(normalized)) {
-    return 'gpt-image-2'
-  }
-  return normalized
+  return model.trim().toLowerCase()
 }
 
-export function getCompatibleImageProviderModels(model?: string | null): string[] | null {
-  if (!model) return null
 
-  const normalized = normalizeImageModel(model)
-  if (normalized === 'gpt-image-2') {
-    return [...GPT_IMAGE_2_MODEL_ALIASES]
-  }
+export async function listPublicImageModels(): Promise<string[]> {
+  const providers = await prisma.imageProvider.findMany({
+    where: { enabled: true },
+    orderBy: { priority: 'asc' },
+    distinct: ['publicModel'],
+    select: { publicModel: true },
+  })
 
-  return [normalized]
+  return providers.map((provider) => provider.publicModel)
 }
 
-export function getPreferredImageProviderModel(model?: string | null): string | null {
-  if (!model) return null
-  return normalizeImageModel(model)
-}
+export async function resolvePublicImageModel(model?: string | null): Promise<string | null> {
+  const requestedModel = model ? normalizePublicImageModel(model) : null
+  const provider = await prisma.imageProvider.findFirst({
+    where: {
+      enabled: true,
+      ...(requestedModel ? { publicModel: requestedModel } : {}),
+    },
+    orderBy: { priority: 'asc' },
+    select: { publicModel: true },
+  })
 
-export function groupImageProviderModel(model: string): string {
-  return normalizeImageModel(model)
+  return provider?.publicModel ?? null
 }

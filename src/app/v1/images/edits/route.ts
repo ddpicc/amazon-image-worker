@@ -8,8 +8,7 @@ import type { RenderSize } from '@/lib/image-options'
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
 import { SubmitImageTaskError, submitBillableImageTaskSync } from '@/lib/image-task-submission'
 import { RemoteReferenceImageError, storeRemoteReferenceImages } from '@/lib/remote-reference-images'
-
-const ALLOWED_MODELS = new Set(['gpt-image-2', 'agnes-image-2.1-flash'])
+import { listPublicImageModels, resolvePublicImageModel } from '@/lib/image-models'
 
 function isHttpsUrl(value: string) {
   try {
@@ -57,10 +56,10 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const {
-      model = 'gpt-image-2',
+      model: requestedModel,
       prompt,
       image,
-      size = 'auto',
+      size = '1024x1024',
       n = 1,
       callback_url,
       mask_url,
@@ -81,9 +80,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!ALLOWED_MODELS.has(model)) {
+    const model = await resolvePublicImageModel(requestedModel)
+    if (!model) {
+      const availableModels = await listPublicImageModels()
       return NextResponse.json(
-        { error: `Model not supported. Use one of: ${[...ALLOWED_MODELS].join(', ')}` },
+        { error: `Model not supported. Available models: ${availableModels.join(', ') || 'none'}` },
         { status: 400 },
       )
     }
@@ -139,7 +140,7 @@ export async function POST(request: NextRequest) {
     const resolvedSize = resolvePublicImageSize(size)
     if (!resolvedSize) {
       return NextResponse.json(
-        { error: 'Unsupported size. Use a valid pixel size (e.g., "1024x1024") or aspect ratio (e.g., "1:1", "16:9").' },
+        { error: 'Unsupported size. Use a widthxheight resolution meeting GPT-Image-2 constraints. auto is not supported.' },
         { status: 400 },
       )
     }

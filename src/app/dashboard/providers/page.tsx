@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchCurrentUser } from '@/lib/dashboard/auth'
-import { groupImageProviderModel } from '@/lib/image-models'
 import { Plus, Pencil, ArrowUp, ArrowDown, Power, PowerOff, X, Eye, Copy, Check, Trash2, RotateCcw } from 'lucide-react'
 import { useDashboardI18n } from '@/lib/dashboard/i18n'
 
@@ -12,7 +11,9 @@ interface Provider {
   name: string
   vendor: string
   baseUrl: string
+  publicModel: string
   model: string
+  supports2k: boolean
   priority: number
   enabled: boolean
   maxConcurrent: number
@@ -32,7 +33,9 @@ interface EditFormData {
   name: string
   vendor: string
   baseUrl: string
+  publicModel: string
   model: string
+  supports2k: boolean
   priority: number
   estimatedCostPerReq: number
   maxConcurrent: number
@@ -42,7 +45,9 @@ interface AddFormData {
   name: string
   vendor: string
   baseUrl: string
+  publicModel: string
   model: string
+  supports2k: boolean
   priority: number
   apiKeyPlaintext: string
   estimatedCostPerReq: number
@@ -53,7 +58,9 @@ const emptyAdd: AddFormData = {
   name: '',
   vendor: '',
   baseUrl: '',
+  publicModel: '',
   model: '',
+  supports2k: false,
   priority: 100,
   apiKeyPlaintext: '',
   estimatedCostPerReq: 0,
@@ -65,46 +72,22 @@ function successRate(p: Provider): string {
   return ((p.successfulAttempts / p.totalAttempts) * 100).toFixed(1) + '%'
 }
 
-const MODEL_ORDER = ['gpt-image-2', 'agnes-image-2.1-flash']
-
 function groupProvidersByModel(providers: Provider[]) {
   const groups = providers.reduce<Record<string, Provider[]>>((acc, provider) => {
-    const modelGroup = groupImageProviderModel(provider.model)
+    const modelGroup = provider.publicModel
     if (!acc[modelGroup]) acc[modelGroup] = []
     acc[modelGroup].push(provider)
     return acc
   }, {})
 
-  return Object.entries(groups).sort(([modelA], [modelB]) => {
-    const indexA = MODEL_ORDER.indexOf(modelA)
-    const indexB = MODEL_ORDER.indexOf(modelB)
-
-    if (indexA !== -1 || indexB !== -1) {
-      const normalizedA = indexA === -1 ? MODEL_ORDER.length : indexA
-      const normalizedB = indexB === -1 ? MODEL_ORDER.length : indexB
-      return normalizedA - normalizedB
-    }
-
-    return modelA.localeCompare(modelB)
-  })
+  return Object.entries(groups).sort(([modelA], [modelB]) => modelA.localeCompare(modelB))
 }
 
-function getGroupLabel(model: string, modelProviders: Provider[]) {
+function getGroupLabel(model: string, modelProviders: Provider[], lang: 'zh' | 'en') {
   const actualModels = [...new Set(modelProviders.map((provider) => provider.model))]
-  const aliases = actualModels.filter((value) => value !== model)
-
-  if (model === 'gpt-image-2') {
-    return {
-      title: 'gpt-image-2',
-      subtitle: aliases.length > 0
-        ? `Providers: ${modelProviders.length} · Aliases: ${aliases.join(', ')}`
-        : `Providers: ${modelProviders.length}`,
-    }
-  }
-
   return {
-    title: model,
-    subtitle: `Providers: ${modelProviders.length}`,
+    title: lang === 'zh' ? `对外模型名：${model}` : `Public Model: ${model}`,
+    subtitle: `Providers: ${modelProviders.length} · Upstream models: ${actualModels.join(', ')}`,
   }
 }
 
@@ -135,7 +118,7 @@ export default function ProvidersPage() {
   const [secretCopied, setSecretCopied] = useState(false)
   const [addForm, setAddForm] = useState<AddFormData>({ ...emptyAdd })
   const [editForm, setEditForm] = useState<EditFormData>({
-    name: '', vendor: '', baseUrl: '', model: '', priority: 100, estimatedCostPerReq: 0, maxConcurrent: 3,
+    name: '', vendor: '', baseUrl: '', publicModel: '', model: '', supports2k: false, priority: 100, estimatedCostPerReq: 0, maxConcurrent: 3,
   })
   const [submitting, setSubmitting] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
@@ -239,7 +222,9 @@ export default function ProvidersPage() {
       name: p.name,
       vendor: p.vendor,
       baseUrl: p.baseUrl,
+      publicModel: p.publicModel,
       model: p.model,
+      supports2k: p.supports2k,
       priority: p.priority,
       estimatedCostPerReq: p.estimatedCostPerReq,
       maxConcurrent: p.maxConcurrent,
@@ -336,7 +321,7 @@ export default function ProvidersPage() {
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
                 <div>
                   {(() => {
-                    const label = getGroupLabel(model, modelProviders)
+                    const label = getGroupLabel(model, modelProviders, lang)
                     return (
                       <>
                         <h3 className="text-sm font-semibold text-gray-900">{label.title}</h3>
@@ -351,7 +336,8 @@ export default function ProvidersPage() {
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
                       <th className="px-4 py-2.5 font-medium">{t('name')}</th>
-                      <th className="px-4 py-2.5 font-medium">{t('vendor')}</th>
+                      <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '上游模型名' : 'Upstream Model'}</th>
+                      <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '支持 2K' : '2K Support'}</th>
                       <th className="px-4 py-2.5 font-medium">{t('status')}</th>
                       <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '优先级' : 'Priority'}</th>
                       <th className="px-4 py-2.5 font-medium">{lang === 'zh' ? '最大并发' : 'Max Concurrent'}</th>
@@ -365,7 +351,8 @@ export default function ProvidersPage() {
                     {modelProviders.map((p, i) => (
                       <tr key={p.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-gray-50`}>
                         <td className="px-4 py-2.5 font-medium text-gray-900">{p.name}</td>
-                        <td className="px-4 py-2.5 text-gray-600">{p.vendor}</td>
+                        <td className="px-4 py-2.5 text-gray-600 font-mono text-xs">{p.model}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{p.supports2k ? (lang === 'zh' ? '是' : 'Yes') : (lang === 'zh' ? '否' : 'No')}</td>
                         <td className="px-4 py-2.5"><StatusBadge provider={p} /></td>
                         <td className="px-4 py-2.5 text-gray-600">{p.priority}</td>
                         <td className="px-4 py-2.5 text-gray-600">{p.maxConcurrent}</td>
@@ -398,7 +385,9 @@ export default function ProvidersPage() {
             <Field label={t('name')}><input type="text" value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Vendor"><input type="text" value={addForm.vendor} onChange={(e) => setAddForm({ ...addForm, vendor: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Base URL"><input type="url" value={addForm.baseUrl} onChange={(e) => setAddForm({ ...addForm, baseUrl: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
-            <Field label="Model"><input type="text" value={addForm.model} onChange={(e) => setAddForm({ ...addForm, model: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+            <Field label={lang === 'zh' ? '对外模型名' : 'Public Model'}><input type="text" value={addForm.publicModel} onChange={(e) => setAddForm({ ...addForm, publicModel: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+            <Field label={lang === 'zh' ? '上游模型名' : 'Upstream Model'}><input type="text" value={addForm.model} onChange={(e) => setAddForm({ ...addForm, model: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+            <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={addForm.supports2k} onChange={(e) => setAddForm({ ...addForm, supports2k: e.target.checked })} />{lang === 'zh' ? '该供应商支持 2K 尺寸' : 'This provider supports 2K sizes'}</label>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Priority"><input type="number" value={addForm.priority} onChange={(e) => setAddForm({ ...addForm, priority: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
               <Field label="Max Concurrent"><input type="number" min="1" value={addForm.maxConcurrent} onChange={(e) => setAddForm({ ...addForm, maxConcurrent: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
@@ -419,7 +408,9 @@ export default function ProvidersPage() {
             <Field label="Name"><input type="text" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Vendor"><input type="text" value={editForm.vendor} onChange={(e) => setEditForm({ ...editForm, vendor: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
             <Field label="Base URL"><input type="url" value={editForm.baseUrl} onChange={(e) => setEditForm({ ...editForm, baseUrl: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
-            <Field label="Model"><input type="text" value={editForm.model} onChange={(e) => setEditForm({ ...editForm, model: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+            <Field label={lang === 'zh' ? '对外模型名' : 'Public Model'}><input type="text" value={editForm.publicModel} onChange={(e) => setEditForm({ ...editForm, publicModel: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+            <Field label={lang === 'zh' ? '上游模型名' : 'Upstream Model'}><input type="text" value={editForm.model} onChange={(e) => setEditForm({ ...editForm, model: e.target.value })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
+            <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={editForm.supports2k} onChange={(e) => setEditForm({ ...editForm, supports2k: e.target.checked })} />{lang === 'zh' ? '该供应商支持 2K 尺寸' : 'This provider supports 2K sizes'}</label>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Priority"><input type="number" value={editForm.priority} onChange={(e) => setEditForm({ ...editForm, priority: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>
               <Field label="Max Concurrent"><input type="number" min="1" value={editForm.maxConcurrent} onChange={(e) => setEditForm({ ...editForm, maxConcurrent: Number(e.target.value) })} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500" required /></Field>

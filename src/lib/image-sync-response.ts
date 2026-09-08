@@ -21,12 +21,19 @@ function toSyncStatus(status: GenerationStatus) {
   }
 }
 
+function getPublicModel(task: ImageTaskWithAssets): string | undefined {
+  const payload = task.requestPayloadJson
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined
+  const model = (payload as Record<string, unknown>).model
+  return typeof model === 'string' ? model : undefined
+}
+
 export function buildSyncImageResponse(task: ImageTaskWithAssets, idempotent: boolean) {
   return {
     created: Math.floor(task.createdAt.getTime() / 1000),
     id: task.id,
     object: task.imageType === 'edit' ? 'image.edit' : 'image.generation',
-    model: task.selectedProviderModel || 'gpt-image-2',
+    model: getPublicModel(task) || task.selectedProviderModel || undefined,
     data: task.assets.map((asset) => ({
       url: asset.cosUrl,
       revised_prompt: task.revisedPrompt || undefined,

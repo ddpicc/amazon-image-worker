@@ -4,7 +4,7 @@ const createGenerationsTaskExample = `curl -X POST "https://web-production-14606
   -d '{
     "model": "gpt-image-2",
     "prompt": "A beautiful colorful sunset over the ocean",
-    "size": "16:9",
+    "size": "1536x1024",
     "quality": "medium",
     "n": 1,
     "callback_url": "https://your-domain.com/webhooks/image-task-completed"
@@ -46,7 +46,7 @@ const callbackExample = `{
       "revised_prompt": "A beautiful colorful sunset over the ocean with golden reflections..."
     }
   ],
-  "size": "1536x960",
+  "size": "1536x1024",
   "image_type": "generate",
   "error": null
 }`
@@ -60,7 +60,7 @@ const syncGenerationsExample = `curl -X POST "https://web-production-14606.up.ra
   -d '{
     "model": "gpt-image-2",
     "prompt": "A beautiful colorful sunset over the ocean",
-    "size": "16:9",
+    "size": "1536x1024",
     "quality": "medium",
     "n": 1
   }'`
@@ -87,9 +87,9 @@ const syncSuccessExample = `{
       "revised_prompt": "A beautiful colorful sunset over the ocean with golden reflections..."
     }
   ],
-  "size": "1536x960",
+  "size": "1536x1024",
   "usage": {
-    "sku": "image_16_9",
+    "sku": "image_1k",
     "unit_price": 0.30,
     "unit_price_fen": 30,
     "price_version": 1,
@@ -112,19 +112,19 @@ const syncRetryableErrorExample = `{
 }`
 
 const createGenerationsRequestFields = [
-  ['model', 'Required. Supported: `gpt-image-2`, `agnes-image-2.1-flash`.'],
+  ['model', 'Optional. Defaults to the highest-priority configured public model. Use `GET /v1/models` to discover available names.'],
   ['prompt', 'Required. Up to 32000 characters.'],
-  ['size', 'Optional. Supports `auto`, aspect ratios such as `3:4`, `3:5`, and `16:9`, or explicit sizes like `1152x1536`.'],
+  ['size', 'Optional. Defaults to `1024x1024`. Otherwise use any `widthxheight` resolution accepted by GPT-Image-2: both edges must be multiples of 16, max edge 3840, aspect ratio at most 3:1, and total pixels 655,360–8,294,400. Ratio strings such as `5:3` and `auto` are not accepted.'],
   ['quality', 'Optional. `low`, `medium`, `high`. Default `medium`. Only supported by `gpt-image-2`.'],
   ['n', 'Optional. Currently only `1` is supported.'],
   ['callback_url', 'Optional. HTTPS callback URL triggered when the task completes or fails.'],
 ]
 
 const createEditsRequestFields = [
-  ['model', 'Required. Supported: `gpt-image-2`, `agnes-image-2.1-flash`.'],
+  ['model', 'Optional. Defaults to the highest-priority configured public model. Use `GET /v1/models` to discover available names.'],
   ['prompt', 'Required. Up to 32000 characters. Describes the edit to apply.'],
   ['image', 'Required. 1-16 reference image URLs (HTTP/HTTPS). The source images to edit.'],
-  ['size', 'Optional. Supports `auto`, aspect ratios such as `3:4`, `3:5`, and `16:9`, or explicit sizes like `1152x1536`.'],
+  ['size', 'Optional. Defaults to `1024x1024`. Otherwise use any `widthxheight` resolution accepted by GPT-Image-2: both edges must be multiples of 16, max edge 3840, aspect ratio at most 3:1, and total pixels 655,360–8,294,400. Ratio strings such as `5:3` and `auto` are not accepted.'],
   ['n', 'Optional. Currently only `1` is supported.'],
   ['callback_url', 'Optional. HTTPS callback URL triggered when the task completes or fails.'],
 ]
@@ -132,7 +132,7 @@ const createEditsRequestFields = [
 const createResponseFields = [
   ['created', 'Unix timestamp when the task was created.'],
   ['id', 'Task ID. Use this value to query task status later.'],
-  ['model', 'Actual model used for generation.'],
+  ['model', 'Public model name requested by the caller.'],
   ['object', '`image.generation.task` for text-to-image, `image.edit.task` for image editing.'],
   ['progress', 'Task progress from `0` to `100`.'],
   ['status', '`pending`, `processing`, `completed`, or `failed`.'],
@@ -144,7 +144,7 @@ const syncResponseFields = [
   ['created', 'Unix timestamp when the request completed.'],
   ['id', 'Persisted internal request/task ID for tracing and support.'],
   ['object', '`image.generation` for text-to-image, `image.edit` for image editing.'],
-  ['model', 'Selected upstream provider model for the successful result.'],
+  ['model', 'Public model name requested by the caller.'],
   ['data', 'Final image output list. Currently always a single image.'],
   ['usage', 'Pricing and charged cost information.'],
   ['task.id', 'Internal persisted task ID, same as top-level `id`.'],
@@ -158,7 +158,7 @@ const modeCompareRows = [
 ]
 
 const queryResponseFields = [
-  ['model', 'Model used for generation. `gpt-image-2` or the actual upstream provider model.'],
+  ['model', 'Public model name requested by the caller.'],
   ['object', '`image.generation.task` for text-to-image, `image.edit.task` for image editing.'],
   ['status', '`pending`, `processing`, `completed`, or `failed`.'],
   ['progress', 'Current task progress.'],
@@ -437,7 +437,7 @@ export function ApiDocsContent() {
             <p className="mt-2">Both sync and async modes support <code>callback_url</code>. In sync mode, callback delivery is still attempted after the request reaches a terminal state.</p>
             <p className="mt-2"><code>mask_url</code> is intentionally not supported on the edits endpoint.</p>
             <p className="mt-2">`n` is currently fixed to <code>1</code> for all endpoints.</p>
-            <p className="mt-2">Supported public models are <code>gpt-image-2</code> and <code>agnes-image-2.1-flash</code>.</p>
+            <p className="mt-2">Public model names are configured from enabled provider mappings. Query <code>GET /v1/models</code> with your Bearer token to retrieve the current list.</p>
           </div>
         </section>
       </div>

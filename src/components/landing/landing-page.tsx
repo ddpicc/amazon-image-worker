@@ -21,6 +21,7 @@ import { fetchCurrentUser, type DashboardUser } from '@/lib/dashboard/auth'
 const copy = {
   navFeatures: '产品特性',
   navHow: '接入流程',
+  navPricing: '价格',
   navDocs: 'API 文档',
   signIn: '登录',
   getStarted: '免费注册',
@@ -192,6 +193,7 @@ export default function LandingPage() {
           <nav className="hidden items-center gap-7 text-sm font-medium text-gray-600 md:flex">
             <a href="#features" className="transition-colors hover:text-gray-900">{t.navFeatures}</a>
             <a href="#how" className="transition-colors hover:text-gray-900">{t.navHow}</a>
+            <Link href="/pricing" className="transition-colors hover:text-gray-900">{t.navPricing}</Link>
             <Link href="/dashboard/docs" className="transition-colors hover:text-gray-900">{t.navDocs}</Link>
           </nav>
 
@@ -212,6 +214,7 @@ export default function LandingPage() {
             <div className="flex flex-col gap-1 text-sm font-medium text-gray-700">
               <a href="#features" onClick={() => setMobileNavOpen(false)} className="rounded-lg px-3 py-2 hover:bg-gray-50">{t.navFeatures}</a>
               <a href="#how" onClick={() => setMobileNavOpen(false)} className="rounded-lg px-3 py-2 hover:bg-gray-50">{t.navHow}</a>
+              <Link href="/pricing" onClick={() => setMobileNavOpen(false)} className="rounded-lg px-3 py-2 hover:bg-gray-50">{t.navPricing}</Link>
               <Link href="/dashboard/docs" onClick={() => setMobileNavOpen(false)} className="rounded-lg px-3 py-2 hover:bg-gray-50">{t.navDocs}</Link>
               <div className="mt-2 flex gap-2 border-t border-gray-100 pt-3">
                 {authArea}

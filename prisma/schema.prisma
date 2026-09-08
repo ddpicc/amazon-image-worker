@@ -184,7 +184,9 @@ model ImageProvider {
   name                     String                   @unique
   vendor                   String
   baseUrl                  String
+  publicModel              String
   model                    String
+  supports2k               Boolean                  @default(false)
   priority                 Int                      @default(100)
   enabled                  Boolean                  @default(true)
   apiKeyCiphertext         String
@@ -219,7 +221,7 @@ model ImageProvider {
   alertRules               AlertRule[]
   alertEvents              AlertEvent[]
 
-  @@index([enabled, priority])
+  @@index([enabled, publicModel, priority])
   @@index([cooldownUntil])
 }
 

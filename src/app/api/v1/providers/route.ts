@@ -25,20 +25,22 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, vendor, baseUrl, model, priority, apiKeyPlaintext, estimatedCostPerReq, maxConcurrent } = body as {
+    const { name, vendor, baseUrl, publicModel, model, supports2k, priority, apiKeyPlaintext, estimatedCostPerReq, maxConcurrent } = body as {
       name?: string
       vendor?: string
       baseUrl?: string
+      publicModel?: string
       model?: string
+      supports2k?: boolean
       priority?: number
       apiKeyPlaintext?: string
       estimatedCostPerReq?: number
       maxConcurrent?: number
     }
 
-    if (!name || !vendor || !baseUrl || !model || !apiKeyPlaintext) {
+    if (!name || !vendor || !baseUrl || !publicModel || !model || !apiKeyPlaintext) {
       return NextResponse.json(
-        { error: 'name, vendor, baseUrl, model, and apiKeyPlaintext are required' },
+        { error: 'name, vendor, baseUrl, publicModel, model, and apiKeyPlaintext are required' },
         { status: 400 },
       )
     }
@@ -47,7 +49,9 @@ export async function POST(request: NextRequest) {
       name,
       vendor,
       baseUrl,
+      publicModel,
       model,
+      supports2k,
       priority,
       apiKeyPlaintext,
       estimatedCostPerReq,

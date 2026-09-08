@@ -653,19 +653,22 @@ export default function AdminTestImagePage() {
 
           <div className="max-w-lg">
             <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'zh' ? '尺寸' : 'Size'}</label>
-            <select
+            <input
+              list="admin-image-size-options"
               value={size}
               onChange={(e) => setSize(e.target.value)}
+              placeholder="1536x1024"
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            >
+            />
+            <datalist id="admin-image-size-options">
               {SIZE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label} — {option.note}
-                </option>
+                <option key={option.value} value={option.value} />
               ))}
-            </select>
+            </datalist>
             <p className="mt-2 text-xs text-gray-500">
-              {lang === 'zh' ? '1K 通常表示长边约 1024 像素，2K 通常表示长边约 2048 像素。' : '1K means roughly 1024 pixels on the long side for the standard preset; 2K means roughly 2048 pixels on the long side.'}
+              {lang === 'zh'
+                ? '省略时默认 1024x1024。也可输入符合官方 GPT-Image-2 约束的尺寸：宽高均为 16 的倍数，最长边不超过 3840，比例不超过 3:1，总像素 655,360–8,294,400。比例字符串（如 5:3）不能直接传。'
+                : 'Omitting size defaults to 1024x1024. You can enter any official GPT-Image-2 resolution: both dimensions divisible by 16, max edge 3840, aspect ratio at most 3:1, and 655,360–8,294,400 total pixels. Ratio strings such as 5:3 are not accepted.'}
             </p>
           </div>
 

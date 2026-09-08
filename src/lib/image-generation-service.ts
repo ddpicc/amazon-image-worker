@@ -421,7 +421,7 @@ async function runImageGenerationForExistingRequest(params: {
     }
   }
 
-  const scoredProviders = await selectProviders(model ?? undefined)
+  const scoredProviders = await selectProviders(model ?? undefined, size)
   const providers = (singleProvider ? scoredProviders.slice(0, 1) : scoredProviders).map(sp => sp.provider)
 
   if (providers.length === 0) {
