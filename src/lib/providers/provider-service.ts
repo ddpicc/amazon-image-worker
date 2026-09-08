@@ -4,10 +4,25 @@ import { encryptSecret } from '../crypto'
 import { scoreProviders, ScoredProvider, ProviderRollingStats, DEFAULT_WEIGHTS, ScoringWeights } from './provider-scoring'
 import { normalizePublicImageModel } from '../image-models'
 import { is2KRenderSize } from '../image-options'
+import { CIRCUIT_BREAKER_RECOVERY_MS } from './circuit-breaker'
 
 // --- Per-Provider Concurrency Tracking ---
 
 export const providerInFlight = new Map<string, number>()
+const circuitBreakerProbeLocks = new Map<string, ReturnType<typeof setTimeout>>()
+
+function claimCircuitBreakerProbe(providerId: string): boolean {
+  if (circuitBreakerProbeLocks.has(providerId)) return false
+  const timer = setTimeout(() => circuitBreakerProbeLocks.delete(providerId), CIRCUIT_BREAKER_RECOVERY_MS)
+  circuitBreakerProbeLocks.set(providerId, timer)
+  return true
+}
+
+export function releaseCircuitBreakerProbe(providerId: string): void {
+  const timer = circuitBreakerProbeLocks.get(providerId)
+  if (timer) clearTimeout(timer)
+  circuitBreakerProbeLocks.delete(providerId)
+}
 
 export function acquireProviderSlot(providerId: string, max: number): boolean {
   if (max <= 0) return true // unlimited
@@ -58,11 +73,24 @@ function normalizeProviderUpstreamModel(model: string): string {
 
 // --- Provider Selection (Smart Routing) ---
 
-export async function selectProviders(model?: string | null, size?: string | null, weights?: ScoringWeights): Promise<ScoredProvider[]> {
+export interface ProviderSelectionOptions {
+  /** Include cooling/half-open providers for a deliberate fallback probe. */
+  includeCoolingDown?: boolean
+  /** Return only cooling/half-open providers, never normal ready providers. */
+  coolingDownOnly?: boolean
+}
+
+export async function selectProviders(
+  model?: string | null,
+  size?: string | null,
+  weights?: ScoringWeights,
+  options: ProviderSelectionOptions = {},
+): Promise<ScoredProvider[]> {
   const now = new Date()
 
-  // Every enabled provider mapped to the requested public model participates.
-  const where: Prisma.ImageProviderWhereInput = { enabled: true }
+  // Load mapped providers first; normally only enabled providers participate,
+  // with an expired circuit breaker admitted for one half-open probe.
+  const where: Prisma.ImageProviderWhereInput = {}
   if (model) {
     where.publicModel = normalizePublicImageModel(model)
   }
@@ -70,25 +98,49 @@ export async function selectProviders(model?: string | null, size?: string | nul
     where.supports2k = true
   }
 
-  const providers = await prisma.imageProvider.findMany({
+  const allProviders = await prisma.imageProvider.findMany({
     where,
     orderBy: { priority: 'asc' },
   })
+
+  if (allProviders.length === 0) return []
+
+  const recoveryCutoff = new Date(now.getTime() - CIRCUIT_BREAKER_RECOVERY_MS)
+  let halfOpenClaimed = false
+  const halfOpenProviders = allProviders.filter((provider) => {
+    if (halfOpenClaimed) return false
+    if (provider.enabled || !provider.circuitBreakerTrippedAt) return false
+    if (provider.circuitBreakerTrippedAt > recoveryCutoff) return false
+    if (provider.cooldownUntil && provider.cooldownUntil > now) return false
+    const claimed = claimCircuitBreakerProbe(provider.id)
+    if (claimed) halfOpenClaimed = true
+    return claimed
+  })
+  const halfOpenIds = new Set(halfOpenProviders.map(provider => provider.id))
+  const coolingDownProviders = allProviders.filter(provider => provider.enabled && provider.cooldownUntil && provider.cooldownUntil > now)
+  const readyProviders = allProviders.filter(provider => provider.enabled && (!provider.cooldownUntil || provider.cooldownUntil <= now))
+  const providers = options.coolingDownOnly
+    ? [...halfOpenProviders, ...coolingDownProviders]
+    : options.includeCoolingDown
+      ? [...readyProviders, ...halfOpenProviders, ...coolingDownProviders]
+      : readyProviders
 
   if (providers.length === 0) return []
 
   // Get rolling 24h stats for all providers
   const rollingStats = await getRollingStats(providers.map(p => p.id))
 
-  // Split into ready and cooling down
-  const ready = providers.filter(p => !p.cooldownUntil || p.cooldownUntil <= now)
+  // Half-open providers are explicitly requested as a fallback probe.
+  const ready = providers.filter(p => !halfOpenIds.has(p.id) && (!p.cooldownUntil || p.cooldownUntil <= now))
   const coolingDown = providers.filter(p => p.cooldownUntil && p.cooldownUntil > now)
+  const halfOpen = providers.filter(p => halfOpenIds.has(p.id))
 
   // Score ready providers (these get priority)
   const scoredReady = scoreProviders(ready, rollingStats, weights)
 
   // Score cooling down providers (lower priority, appended at end)
   const scoredCooling = scoreProviders(coolingDown, rollingStats, weights)
+  const scoredHalfOpen = scoreProviders(halfOpen, rollingStats, weights)
 
   // Split by concurrency capacity: not-full first, full last
   function splitByCapacity(scored: ScoredProvider[]): { notFull: ScoredProvider[]; full: ScoredProvider[] } {
@@ -109,7 +161,9 @@ export async function selectProviders(model?: string | null, size?: string | nul
   const readySplit = splitByCapacity(scoredReady)
   const coolingSplit = splitByCapacity(scoredCooling)
 
-  return [...readySplit.notFull, ...readySplit.full, ...coolingSplit.notFull, ...coolingSplit.full]
+  return options.coolingDownOnly || options.includeCoolingDown
+    ? [...scoredHalfOpen, ...readySplit.notFull, ...readySplit.full, ...coolingSplit.notFull, ...coolingSplit.full]
+    : [...readySplit.notFull, ...readySplit.full]
 }
 
 async function getRollingStats(providerIds: string[]): Promise<Map<string, ProviderRollingStats>> {
@@ -124,6 +178,7 @@ async function getRollingStats(providerIds: string[]): Promise<Map<string, Provi
     where: {
       providerId: { in: providerIds },
       startedAt: { gte: twentyFourHoursAgo },
+      status: { in: ['SUCCEEDED', 'FAILED'] },
     },
     select: {
       providerId: true,
@@ -277,46 +332,30 @@ export async function rotateProviderApiKey(id: string, newApiKeyPlaintext: strin
 // --- Provider health tracking ---
 
 export async function markProviderSuccess(providerId: string, durationMs: number) {
-  const provider = await prisma.imageProvider.findUnique({ where: { id: providerId } })
-  if (!provider) return
-
-  // Update running averages
-  const newTotalAttempts = provider.totalAttempts + 1
-  const newSuccessfulAttempts = provider.successfulAttempts + 1
-  const newTotalDuration = provider.totalDurationMs + durationMs
-  const newAvgDuration = Math.round(newTotalDuration / newTotalAttempts)
-
-  await prisma.imageProvider.update({
-    where: { id: providerId },
-    data: {
-      totalAttempts: newTotalAttempts,
-      successfulAttempts: newSuccessfulAttempts,
-      totalDurationMs: newTotalDuration,
-      avgDurationMs: newAvgDuration,
-      lastSuccessAt: new Date(),
-      cooldownUntil: null,
-      consecutiveFailures: 0,
-      failureCount: 0,
-    },
-  })
+  await prisma.$executeRaw`
+    UPDATE "ImageProvider"
+    SET "totalAttempts" = "totalAttempts" + 1,
+        "successfulAttempts" = "successfulAttempts" + 1,
+        "totalDurationMs" = "totalDurationMs" + ${durationMs},
+        "avgDurationMs" = ROUND(("totalDurationMs" + ${durationMs})::numeric / ("totalAttempts" + 1))::integer,
+        "lastSuccessAt" = NOW(),
+        "cooldownUntil" = NULL,
+        "consecutiveFailures" = 0,
+        "failureCount" = 0,
+        "enabled" = CASE WHEN "circuitBreakerTrippedAt" IS NOT NULL THEN TRUE ELSE "enabled" END,
+        "circuitBreakerTrippedAt" = NULL,
+        "circuitBreakerTripReason" = NULL
+    WHERE "id" = ${providerId}
+  `
 }
 
 export async function markProviderFailure(providerId: string, durationMs: number) {
-  const provider = await prisma.imageProvider.findUnique({ where: { id: providerId } })
-  if (!provider) return
-
-  const newTotalAttempts = provider.totalAttempts + 1
-  const newTotalDuration = provider.totalDurationMs + durationMs
-  const newAvgDuration = Math.round(newTotalDuration / newTotalAttempts)
-
-  await prisma.imageProvider.update({
-    where: { id: providerId },
-    data: {
-      totalAttempts: newTotalAttempts,
-      totalDurationMs: newTotalDuration,
-      avgDurationMs: newAvgDuration,
-      lastFailureAt: new Date(),
-      failureCount: { increment: 1 },
-    },
-  })
+  await prisma.$executeRaw`
+    UPDATE "ImageProvider"
+    SET "totalAttempts" = "totalAttempts" + 1,
+        "totalDurationMs" = "totalDurationMs" + ${durationMs},
+        "avgDurationMs" = ROUND(("totalDurationMs" + ${durationMs})::numeric / ("totalAttempts" + 1))::integer,
+        "lastFailureAt" = NOW()
+    WHERE "id" = ${providerId}
+  `
 }

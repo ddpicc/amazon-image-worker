@@ -26,6 +26,15 @@ export function classifyError(error: unknown): ErrorType {
   if (code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'UND_ERR_CONNECT_TIMEOUT') return 'TIMEOUT'
   if (msgLower.includes('timeout') || msgLower.includes('timed out')) return 'TIMEOUT'
 
+  // Request validation errors should not damage provider health. Keep this
+  // focused on common parameter-validation responses; other 4xx errors may
+  // still indicate a provider configuration problem.
+  if (status === 400 || status === 422) return 'PARAMETER_ERROR'
+  if (
+    status && status >= 400 && status < 500 &&
+    (msgLower.includes('invalid') || msgLower.includes('unsupported') || msgLower.includes('parameter') || msgLower.includes('validation') || msgLower.includes('size'))
+  ) return 'PARAMETER_ERROR'
+
   // Network errors
   if (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'ENETUNREACH') return 'NETWORK_ERROR'
   if (msgLower.includes('network') || msgLower.includes('econnrefused')) return 'NETWORK_ERROR'

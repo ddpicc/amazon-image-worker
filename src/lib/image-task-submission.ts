@@ -9,10 +9,12 @@ import {
   executeSyncImageGeneration,
   ProviderCapacityRequeueError,
   ProviderExecutionFailedError,
+  ROUTE_TOTAL_TIMEOUT_MS,
 } from '@/lib/image-generation-service'
 import { enqueueImageGeneration } from '@/lib/image-generation-worker-queue'
 import { buildPersistedImageGenerationPayload } from '@/lib/image-generation-service'
-import type { AspectRatio, RenderSize } from '@/lib/image-options'
+import { is2KRenderSize, type AspectRatio, type RenderSize } from '@/lib/image-options'
+import { normalizePublicImageModel } from '@/lib/image-models'
 import type { StoredReferenceImage } from '@/lib/amazon-workflow'
 import { dispatchImageTaskCallback } from '@/lib/image-task-callback'
 import { logger } from '@/lib/logger'
@@ -192,6 +194,23 @@ async function createBillableImageTask(
   params: SubmitBillableImageTaskParams,
 ): Promise<SubmitBillableImageTaskResult> {
   const normalizedIdempotencyKey = params.idempotencyKey?.trim() || null
+
+  if (params.model && is2KRenderSize(params.size)) {
+    const supports2k = await prisma.imageProvider.count({
+      where: {
+        enabled: true,
+        publicModel: normalizePublicImageModel(params.model),
+        supports2k: true,
+      },
+    })
+    if (supports2k === 0) {
+      throw new SubmitImageTaskError(
+        503,
+        'no_2k_provider_available',
+        'No image provider that supports 2K is currently available. Please retry later.',
+      )
+    }
+  }
 
   const requestPayload = await buildPersistedImageGenerationPayload({
     model: params.model ?? null,
@@ -440,6 +459,11 @@ async function dispatchStoredTaskCallbackBestEffort(requestId: string) {
 }
 
 function throwForExistingSyncFailure(requestId: string, message: string | null | undefined): never {
+  if (message?.includes('no_2k_provider_available')) {
+    throw new SubmitImageTaskError(503, 'no_2k_provider_available', 'No image provider that supports 2K is currently available. Please retry later.', {
+      request_id: requestId,
+    })
+  }
   if (message?.includes('No enabled image providers')) {
     throw new SubmitImageTaskError(503, 'no_provider_available', 'No image provider is currently available. Please retry later.', {
       request_id: requestId,
@@ -608,8 +632,8 @@ export async function reconcileTimedOutBillableImageTasks(params?: {
   processingTimeoutMs?: number
   limit?: number
 }) {
-  const queuedTimeoutMs = params?.queuedTimeoutMs ?? 15 * 60 * 1000
-  const processingTimeoutMs = params?.processingTimeoutMs ?? 30 * 60 * 1000
+  const queuedTimeoutMs = params?.queuedTimeoutMs ?? ROUTE_TOTAL_TIMEOUT_MS
+  const processingTimeoutMs = params?.processingTimeoutMs ?? ROUTE_TOTAL_TIMEOUT_MS
   const limit = params?.limit ?? 50
   const now = new Date()
   const queuedCutoff = new Date(now.getTime() - queuedTimeoutMs)

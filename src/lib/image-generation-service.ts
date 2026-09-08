@@ -5,11 +5,12 @@ import { StoredReferenceImage } from './amazon-workflow'
 import { AspectRatio, RenderSize } from './image-options'
 import { completeAiOperation, completeAiOperationAttempt, getAiOperationExpiryDate, startAiOperation, startAiOperationAttempt } from './ai-operations'
 import { RouteSummary, PersistedImageGenerationPayload } from './image-generation'
-import { selectProviders, markProviderSuccess, markProviderFailure, acquireProviderSlot, releaseProviderSlot } from './providers/provider-service'
+import { selectProviders, markProviderSuccess, markProviderFailure, acquireProviderSlot, releaseProviderSlot, releaseCircuitBreakerProbe } from './providers/provider-service'
 import { classifyError } from './providers/error-classifier'
-import { applyCooldown, clearCooldown } from './providers/cooldown'
-import { checkCircuitBreaker } from './providers/circuit-breaker'
+import { applyCooldown } from './providers/cooldown'
+import { checkCircuitBreaker, recoverCircuitBreaker, tripCircuitBreaker } from './providers/circuit-breaker'
 import { normalizeImageModel } from './image-models'
+import { is2KRenderSize } from './image-options'
 import { prisma } from './db/prisma'
 import { getObjectStorageBackend, uploadBufferToObjectStorage } from './object-storage'
 import { dispatchImageTaskCallback } from './image-task-callback'
@@ -70,8 +71,9 @@ export class ProviderExecutionFailedError extends Error {
 }
 
 const PROVIDER_TIMEOUT_MS = 240_000
-const CAPACITY_REQUEUE_LIMIT = 30
-const CAPACITY_REQUEUE_MAX_WAIT_MS = 7 * 60 * 1000
+export const ROUTE_TOTAL_TIMEOUT_MS = 10 * 60 * 1000
+const CAPACITY_REQUEUE_LIMIT = 60
+const CAPACITY_REQUEUE_MAX_WAIT_MS = ROUTE_TOTAL_TIMEOUT_MS
 
 function getExtensionFromMediaType(mediaType: string): string {
   if (mediaType === 'image/png') return 'png'
@@ -97,6 +99,7 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
     apiKey,
     baseURL,
     timeout: PROVIDER_TIMEOUT_MS,
+    maxRetries: 0,
   })
 }
 
@@ -215,14 +218,15 @@ function isBareIpUrl(value: string): boolean {
 }
 
 async function withTimeout<T>(run: () => Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  return Promise.race([
-    run(),
-    new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(message))
-      }, timeoutMs)
-    }),
-  ])
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+  })
+  try {
+    return await Promise.race([run(), timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 async function downloadRemoteImage(url: string, timeoutMs = PROVIDER_TIMEOUT_MS): Promise<{ buffer: Buffer; mimeType: string }> {
@@ -393,6 +397,7 @@ export async function createImageGenerationRequest(input: GenerateImageInput): P
     imageType,
     metadata,
     onStatus,
+    routeStartedAt: requestRecord.startedAt ?? undefined,
   })
 }
 
@@ -409,10 +414,13 @@ async function runImageGenerationForExistingRequest(params: {
   metadata?: Record<string, unknown>
   onStatus?: (message: string) => Promise<void> | void
   singleProvider?: boolean
+  routeStartedAt?: Date
 }): Promise<GenerateImageOutput> {
   const { requestId, operationId, apiKeyId, model, prompt, referenceImages, size, aspectRatio, imageType, onStatus, singleProvider = false } = params
   const mode = referenceImages.length > 0 ? 'edit' : 'generate'
-  const startedAt = Date.now()
+  const routeStartedAtMs = params.routeStartedAt?.getTime() ?? Date.now()
+  const routeDeadlineMs = routeStartedAtMs + ROUTE_TOTAL_TIMEOUT_MS
+  const startedAt = routeStartedAtMs
 
   const emitStatus = async (message: string) => {
     await emitPersistedStatus(requestId, message)
@@ -421,11 +429,36 @@ async function runImageGenerationForExistingRequest(params: {
     }
   }
 
-  const scoredProviders = await selectProviders(model ?? undefined, size)
-  const providers = (singleProvider ? scoredProviders.slice(0, 1) : scoredProviders).map(sp => sp.provider)
+  let scoredProviders = await selectProviders(model ?? undefined, size)
+  let providers = (singleProvider ? scoredProviders.slice(0, 1) : scoredProviders).map(sp => sp.provider)
+  let coolingProbeLoaded = false
+
+  const appendCoolingProbe = async () => {
+    if (coolingProbeLoaded) return
+    coolingProbeLoaded = true
+    const coolingCandidates = await selectProviders(
+      model ?? undefined,
+      size,
+      undefined,
+      { coolingDownOnly: true },
+    )
+    // A cooldown fallback is deliberately a single probe, not a second
+    // ordinary routing pool.
+    const probe = coolingCandidates[0]
+    if (probe) {
+      providers = [...providers, probe.provider]
+    }
+  }
 
   if (providers.length === 0) {
-    const errorMessage = 'No enabled image providers are configured'
+    await appendCoolingProbe()
+  }
+
+  if (providers.length === 0) {
+    const noProviderCode = is2KRenderSize(size) ? 'no_2k_provider_available' : 'no_provider_available'
+    const errorMessage = is2KRenderSize(size)
+      ? `${noProviderCode}: No enabled 2K image providers are configured`
+      : 'No enabled image providers are configured'
     await prisma.imageGenerationRequest.update({
       where: { id: requestId },
       data: {
@@ -443,7 +476,7 @@ async function runImageGenerationForExistingRequest(params: {
       errorMessage,
       responseSnapshot: {
         stage: 'provider-discovery',
-        reason: 'no_enabled_providers',
+        reason: noProviderCode,
       },
     }).catch(() => undefined)
     throw new Error(errorMessage)
@@ -454,6 +487,10 @@ async function runImageGenerationForExistingRequest(params: {
   const errors: string[] = []
   const attemptedLines: RouteSummary['attemptedLines'] = []
   let capacityBlocked = false
+  let attemptedProviderCount = 0
+  // Once the asset row exists, the provider already produced a durable result.
+  // Later bookkeeping failures must not trigger another upstream generation.
+  let persistedAttemptResult: any = null
 
   console.info('[image.generate] request start', {
     requestId: requestId,
@@ -470,12 +507,28 @@ async function runImageGenerationForExistingRequest(params: {
     })),
   })
 
-  for (let index = 0; index < providers.length; index += 1) {
+  for (let index = 0; ; index += 1) {
+    if (index >= providers.length) {
+      if (!coolingProbeLoaded) {
+        await appendCoolingProbe()
+        if (index < providers.length) {
+          await emitStatus('正常线路均失败，正在尝试冷却线路探测')
+          continue
+        }
+      }
+      break
+    }
     const provider = providers[index]
     const attemptDurationMs = Date.now()
+    const isHalfOpenProbe = !provider.enabled && Boolean(provider.circuitBreakerTrippedAt)
+
+    if (routeDeadlineMs - Date.now() <= 0) {
+      errors.push('Image generation exceeded the 10-minute routing deadline')
+      break
+    }
 
     if (index === 0) {
-      await emitStatus('正在尝试第一线路')
+      await emitStatus(isHalfOpenProbe ? '正在进行熔断恢复探测' : '正在尝试第一线路')
     }
 
     const attemptRequestSnapshot = {
@@ -492,6 +545,7 @@ async function runImageGenerationForExistingRequest(params: {
     // Acquire provider concurrency slot; skip if at capacity
     if (!acquireProviderSlot(provider.id, provider.maxConcurrent)) {
       capacityBlocked = true
+      releaseCircuitBreakerProbe(provider.id)
       console.info('[image.generate] provider at capacity, skipping', {
         requestId,
         providerName: provider.name,
@@ -501,32 +555,43 @@ async function runImageGenerationForExistingRequest(params: {
       continue
     }
 
-    const operationAttempt = await startAiOperationAttempt({
-      operationId: operationId,
-      providerType: 'IMAGE',
-      providerId: provider.id,
-      providerName: provider.name,
-      baseUrl: provider.baseUrl,
-      model: provider.model,
-      attemptIndex: index + 1,
-      upstreamApiKind: upstreamApiKindFromMode(mode),
-      requestSnapshot: attemptRequestSnapshot,
-    })
+    attemptedProviderCount += 1
 
-    const attempt = await prisma.imageGenerationAttempt.create({
-      data: {
-        requestId: requestId,
-        operationAttemptId: operationAttempt.id,
+    let operationAttempt: Awaited<ReturnType<typeof startAiOperationAttempt>>
+    let attempt: Awaited<ReturnType<typeof prisma.imageGenerationAttempt.create>>
+    try {
+      operationAttempt = await startAiOperationAttempt({
+        operationId: operationId,
+        providerType: 'IMAGE',
         providerId: provider.id,
+        providerName: provider.name,
         baseUrl: provider.baseUrl,
         model: provider.model,
         attemptIndex: index + 1,
         upstreamApiKind: upstreamApiKindFromMode(mode),
-        status: 'STARTED',
-        requestSnapshotJson: attemptRequestSnapshot as Prisma.InputJsonValue,
-      },
-    })
+        requestSnapshot: attemptRequestSnapshot,
+      })
 
+      attempt = await prisma.imageGenerationAttempt.create({
+        data: {
+          requestId: requestId,
+          operationAttemptId: operationAttempt.id,
+          providerId: provider.id,
+          baseUrl: provider.baseUrl,
+          model: provider.model,
+          attemptIndex: index + 1,
+          upstreamApiKind: upstreamApiKindFromMode(mode),
+          status: 'STARTED',
+          requestSnapshotJson: attemptRequestSnapshot as Prisma.InputJsonValue,
+        },
+      })
+    } catch (error) {
+      releaseProviderSlot(provider.id)
+      releaseCircuitBreakerProbe(provider.id)
+      throw error
+    }
+
+    let attemptAborted = false
     try {
       const attemptResult = await withTimeout(async () => {
         const phaseStartedAt = Date.now()
@@ -576,6 +641,9 @@ async function runImageGenerationForExistingRequest(params: {
 
         const cosKey = buildCosKey(requestId, extracted.mimeType)
         const cosUploadStartedAt = Date.now()
+        if (attemptAborted || routeDeadlineMs - Date.now() <= 0) {
+          throw new Error('Provider attempt exceeded the 10-minute routing deadline')
+        }
         const uploaded = await uploadBufferToObjectStorage({
           buffer: extracted.buffer,
           key: cosKey,
@@ -585,6 +653,9 @@ async function runImageGenerationForExistingRequest(params: {
         const cosUploadMs = Date.now() - cosUploadStartedAt
 
         const assetPersistStartedAt = Date.now()
+        if (attemptAborted || routeDeadlineMs - Date.now() <= 0) {
+          throw new Error('Provider attempt exceeded the 10-minute routing deadline')
+        }
         await prisma.generatedImageAsset.create({
           data: {
             requestId: requestId,
@@ -596,6 +667,18 @@ async function runImageGenerationForExistingRequest(params: {
             upstreamSourceUrl: extracted.returnedKind === 'remote-url' ? 'remote-upstream' : null,
           },
         })
+        persistedAttemptResult = {
+          uploaded,
+          revisedPrompt: 'revisedPrompt' in extracted ? extracted.revisedPrompt : revisedPrompt,
+          returnedImageUrlKind: extracted.returnedKind,
+          timing: {
+            decryptMs,
+            upstreamMs,
+            cosUploadMs,
+            assetPersistMs: Date.now() - assetPersistStartedAt,
+            totalInnerMs: Date.now() - phaseStartedAt,
+          },
+        }
         const assetPersistMs = Date.now() - assetPersistStartedAt
 
         return {
@@ -610,7 +693,11 @@ async function runImageGenerationForExistingRequest(params: {
             totalInnerMs: Date.now() - phaseStartedAt,
           },
         }
-      }, PROVIDER_TIMEOUT_MS, `Provider timed out after ${PROVIDER_TIMEOUT_MS}ms`)
+      }, Math.min(PROVIDER_TIMEOUT_MS, Math.max(1, routeDeadlineMs - Date.now())), `Provider timed out before the 10-minute routing deadline`)
+
+      if (routeDeadlineMs - Date.now() <= 0) {
+        throw new Error('Image generation exceeded the 10-minute routing deadline')
+      }
 
       const attemptDuration = Date.now() - attemptDurationMs
 
@@ -694,10 +781,10 @@ async function runImageGenerationForExistingRequest(params: {
         },
       })
 
-      // Smart routing: mark success and clear cooldown
+      // Smart routing: mark success and reset provider health state
       await markProviderSuccess(provider.id, attemptDuration)
-      await clearCooldown(provider.id)
       releaseProviderSlot(provider.id)
+      releaseCircuitBreakerProbe(provider.id)
 
       attemptedLines.push({
         lineIndex: index + 1,
@@ -728,6 +815,100 @@ async function runImageGenerationForExistingRequest(params: {
         routeSummary,
       }
     } catch (error) {
+      if (persistedAttemptResult && routeDeadlineMs - Date.now() > 0) {
+        const attemptResult = persistedAttemptResult
+        const attemptDuration = Date.now() - attemptDurationMs
+        const responseSnapshot = {
+          returnedImageUrlKind: attemptResult.returnedImageUrlKind,
+          uploadedUrl: attemptResult.uploaded.url,
+          uploadedBytes: attemptResult.uploaded.bytes,
+          storageBackend: attemptResult.uploaded.backend,
+          revisedPrompt: attemptResult.revisedPrompt,
+          timing: attemptResult.timing,
+        }
+
+        await prisma.imageGenerationAttempt.update({
+          where: { id: attempt.id },
+          data: {
+            status: 'SUCCEEDED',
+            durationMs: attemptDuration,
+            responseSnapshotJson: responseSnapshot,
+            completedAt: new Date(),
+          },
+        }).catch(() => undefined)
+        await completeAiOperationAttempt({
+          attemptId: operationAttempt.id,
+          status: 'SUCCEEDED',
+          responseSnapshot,
+        }).catch(() => undefined)
+        await prisma.imageGenerationRequest.update({
+          where: { id: requestId },
+          data: {
+            selectedProviderId: provider.id,
+            selectedProviderName: provider.name,
+            selectedProviderBaseUrl: provider.baseUrl,
+            selectedProviderModel: provider.model,
+            attemptCount: index + 1,
+            revisedPrompt: attemptResult.revisedPrompt,
+            responseSnapshotJson: {
+              selectedProviderName: provider.name,
+              ...responseSnapshot,
+              timing: {
+                ...attemptResult.timing,
+                requestTotalMs: Date.now() - startedAt,
+                attemptTotalMs: attemptDuration,
+              },
+            },
+            status: 'SUCCEEDED',
+            statusMessage: `${lineName(index + 1)}生成成功`,
+            durationMs: Date.now() - startedAt,
+            completedAt: new Date(),
+          },
+        }).catch(() => undefined)
+        await completeAiOperation({
+          operationId,
+          status: 'SUCCEEDED',
+          finalPrompt: prompt,
+          outputSummary: {
+            selectedProviderName: provider.name,
+            selectedProviderModel: provider.model,
+            attemptCount: index + 1,
+            imageUrl: attemptResult.uploaded.url,
+          },
+          responseSnapshot,
+        }).catch(() => undefined)
+        await markProviderSuccess(provider.id, attemptDuration).catch(() => undefined)
+        releaseProviderSlot(provider.id)
+        releaseCircuitBreakerProbe(provider.id)
+
+        attemptedLines.push({
+          lineIndex: index + 1,
+          lineName: provider.name,
+          status: 'succeeded',
+        })
+        const routeSummary: RouteSummary = {
+          selectedLineName: provider.name,
+          selectedLineIndex: index + 1,
+          switched: index > 0,
+          attemptedLines,
+          userMessage: index > 0
+            ? `第一线路调用失败，已切换到第 ${index + 1} 线路（${provider.name}）并生成成功。`
+            : `已通过第一线路（${provider.name}）生成成功。`,
+        }
+        await emitStatus(`${lineName(index + 1)}生成成功`).catch(() => undefined)
+        await dispatchStoredTaskCallback(requestId)
+        return {
+          requestId,
+          operationId,
+          imageUrl: attemptResult.uploaded.url,
+          revisedPrompt: attemptResult.revisedPrompt,
+          size,
+          aspectRatio,
+          routeSummary,
+        }
+      }
+
+      attemptAborted = true
       const message = serializeError(error)
       const errorType = classifyError(error)
       const attemptDuration = Date.now() - attemptDurationMs
@@ -771,21 +952,45 @@ async function runImageGenerationForExistingRequest(params: {
         },
       }).catch(() => undefined)
 
+      // Request validation failures belong to the caller, not the provider.
+      // They should end this request without changing health or routing state.
+      if (errorType === 'PARAMETER_ERROR') {
+        if (isHalfOpenProbe) {
+          await recoverCircuitBreaker(provider.id).catch(() => undefined)
+        }
+        releaseProviderSlot(provider.id)
+        releaseCircuitBreakerProbe(provider.id)
+        break
+      }
+
       // Smart routing: mark failure, apply graduated cooldown, check circuit breaker
       await markProviderFailure(provider.id, attemptDuration)
-      const cooldown = await applyCooldown(provider.id, errorType, provider.consecutiveFailures, attempt.id)
+      const cooldown = await applyCooldown(provider.id, errorType, attempt.id)
       releaseProviderSlot(provider.id)
-      const breakerTripped = cooldown.disabled || await checkCircuitBreaker(provider.id, attempt.id)
+      releaseCircuitBreakerProbe(provider.id)
+      const breakerTripped = isHalfOpenProbe
+        ? (await tripCircuitBreaker({
+            providerId: provider.id,
+            attemptId: attempt.id,
+            reason: `Half-open recovery probe failed: ${message}`,
+            force: true,
+          }), true)
+        : cooldown.disabled || await checkCircuitBreaker(provider.id, attempt.id)
       if (breakerTripped) {
         console.warn(`[image.generate] Circuit breaker tripped for provider ${provider.name}`)
       }
 
-      if (singleProvider) {
+      // A timeout is local to this attempt; keep failover enabled even for the
+      // synchronous entry point. Other single-provider failures retain the
+      // existing retry/recommendation behavior.
+      if ((singleProvider && errorType !== 'TIMEOUT') || routeDeadlineMs - Date.now() <= 0) {
         break
       }
 
       if (index < providers.length - 1) {
         await emitStatus(`${lineName(index + 1)}失败，正在切换${lineName(index + 2)}`)
+      } else if (!coolingProbeLoaded) {
+        await emitStatus('正常线路均失败，正在尝试冷却线路探测')
       } else {
         await emitStatus(`${lineName(index + 1)}失败，所有线路都不可用`)
       }
@@ -793,15 +998,17 @@ async function runImageGenerationForExistingRequest(params: {
     }
   }
 
-  if (capacityBlocked) {
+  if (capacityBlocked && attemptedProviderCount === 0 && routeDeadlineMs - Date.now() > 0) {
     throw new ProviderCapacityRequeueError()
   }
 
-  const errorMessage = errors.join(' | ') || 'All image providers failed'
+  const errorMessage = routeDeadlineMs - Date.now() <= 0
+    ? 'Image generation exceeded the 10-minute routing deadline'
+    : errors.join(' | ') || 'All image providers failed'
   await prisma.imageGenerationRequest.update({
     where: { id: requestId },
     data: {
-      attemptCount: providers.length,
+      attemptCount: attemptedLines.length,
       status: 'FAILED',
       statusMessage: attemptedLines.length > 1 ? '前面线路调用失败，已依次切换后备线路，但全部失败。' : '第一线路调用失败，且当前没有可用后备线路。',
       durationMs: Date.now() - startedAt,
@@ -973,14 +1180,24 @@ export async function executeQueuedImageGeneration(requestId: string) {
     throw new Error('Queued image generation request is missing requestPayloadJson')
   }
 
-  await prisma.imageGenerationRequest.update({
-    where: { id: request.id },
+  const routeStartedAt = request.startedAt ?? request.queuedAt ?? request.createdAt
+  const claimed = await prisma.imageGenerationRequest.updateMany({
+    where: { id: request.id, status: 'QUEUED' },
     data: {
       status: 'PROCESSING',
       statusMessage: '正在尝试第一线路',
-      startedAt: request.startedAt ?? new Date(),
+      startedAt: routeStartedAt,
     },
   })
+  if (claimed.count === 0) {
+    // A duplicate worker/job must not execute the same request a second time.
+    const latest = await prisma.imageGenerationRequest.findUnique({
+      where: { id: request.id },
+      include: { assets: { orderBy: { createdAt: 'asc' } } },
+    })
+    if (latest) return latest
+    throw new Error(`Image generation request disappeared during claim: ${request.id}`)
+  }
 
   const referenceImages = await Promise.all(
     (payload.referenceImages || []).slice(0, 16).map(loadStoredReferenceImage),
@@ -1002,6 +1219,7 @@ export async function executeQueuedImageGeneration(requestId: string) {
       aspectRatio: payload.aspectRatio ?? undefined,
       imageType: payload.imageType ?? undefined,
       metadata: payload.metadata ?? undefined,
+      routeStartedAt,
       onStatus: async (message) => {
         await emitPersistedStatus(request.id, message)
       },
@@ -1011,7 +1229,7 @@ export async function executeQueuedImageGeneration(requestId: string) {
       const now = Date.now()
       const currentRequeueCount = (request as { capacityRequeueCount?: number | null }).capacityRequeueCount ?? 0
       const nextRequeueCount = currentRequeueCount + 1
-      const waitStartedAt = request.queuedAt ?? request.createdAt
+      const waitStartedAt = request.startedAt ?? request.queuedAt ?? request.createdAt
       const totalWaitMs = now - waitStartedAt.getTime()
 
       if (nextRequeueCount > CAPACITY_REQUEUE_LIMIT || totalWaitMs > CAPACITY_REQUEUE_MAX_WAIT_MS) {
@@ -1107,15 +1325,24 @@ export async function executeSyncImageGeneration(requestId: string) {
     throw new Error('Synchronous image generation request is missing requestPayloadJson')
   }
 
-  await prisma.imageGenerationRequest.update({
-    where: { id: request.id },
+  const routeStartedAt = request.startedAt ?? new Date()
+  const claimed = await prisma.imageGenerationRequest.updateMany({
+    where: { id: request.id, status: 'STARTED' },
     data: {
       status: 'PROCESSING',
       statusMessage: '正在尝试第一线路',
-      startedAt: request.startedAt ?? new Date(),
+      startedAt: routeStartedAt,
       queuedAt: null,
     },
   })
+  if (claimed.count === 0) {
+    const latest = await prisma.imageGenerationRequest.findUnique({
+      where: { id: request.id },
+      include: { assets: { orderBy: { createdAt: 'asc' } } },
+    })
+    if (latest) return latest
+    throw new Error(`Image generation request disappeared during claim: ${request.id}`)
+  }
 
   const referenceImages = await Promise.all(
     (payload.referenceImages || []).slice(0, 16).map(loadStoredReferenceImage),
@@ -1136,6 +1363,7 @@ export async function executeSyncImageGeneration(requestId: string) {
     aspectRatio: payload.aspectRatio ?? undefined,
     imageType: payload.imageType ?? undefined,
     metadata: payload.metadata ?? undefined,
+    routeStartedAt,
     onStatus: async (message) => {
       await emitPersistedStatus(request.id, message)
     },

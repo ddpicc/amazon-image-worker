@@ -26,6 +26,7 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
     apiKey,
     baseURL,
     timeout: PROVIDER_TIMEOUT_MS,
+    maxRetries: 0,
   })
 }
 

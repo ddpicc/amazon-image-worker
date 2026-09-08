@@ -45,6 +45,7 @@ enum AiProviderType {
 }
 
 enum ErrorType {
+  PARAMETER_ERROR
   RATE_LIMIT
   AUTH_FAILURE
   TIMEOUT

@@ -32,6 +32,12 @@ function publicErrorFromMessage(message: string | null | undefined) {
     }
   }
 
+  if (message.includes('no_2k_provider_available')) {
+    return {
+      code: 'no_2k_provider_available',
+      message: 'No image provider that supports 2K is currently available. Please retry later.',
+    }
+  }
   if (message.includes('No enabled image providers')) {
     return {
       code: 'no_provider_available',
