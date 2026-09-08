@@ -511,7 +511,8 @@ model BalanceLog {
 
 model PricingSku {
   id        String                   @id @default(cuid())
-  sku       String                   @unique
+  model     String
+  sku       String
   label     String
   priceFen  Int
   version   Int                      @default(1)
@@ -521,12 +522,15 @@ model PricingSku {
   updatedAt DateTime                 @updatedAt
   history   PricingSkuPriceHistory[]
 
+  @@unique([model, sku])
   @@index([enabled])
+  @@index([model, enabled])
 }
 
 model PricingSkuPriceHistory {
   id           String     @id @default(cuid())
   pricingSkuId String
+  model        String
   sku          String
   version      Int
   priceFen     Int
@@ -535,8 +539,9 @@ model PricingSkuPriceHistory {
   createdAt    DateTime   @default(now())
   pricingSku   PricingSku @relation(fields: [pricingSkuId], references: [id], onDelete: Cascade)
 
-  @@unique([sku, version])
+  @@unique([model, sku, version])
   @@index([pricingSkuId, version])
+  @@index([model, sku, createdAt(sort: Desc)])
   @@index([sku, createdAt(sort: Desc)])
 }
 

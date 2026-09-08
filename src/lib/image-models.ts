@@ -9,6 +9,9 @@ export function normalizeImageModel(model: string): string {
   return model.trim().toLowerCase()
 }
 
+export function isAgnesImageModel(model: string): boolean {
+  return normalizeImageModel(model).startsWith('agnes-image-')
+}
 
 export async function listPublicImageModels(): Promise<string[]> {
   const providers = await prisma.imageProvider.findMany({

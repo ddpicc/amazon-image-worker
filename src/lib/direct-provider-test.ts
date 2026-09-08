@@ -2,7 +2,7 @@ import OpenAI from 'openai'
 import { decryptSecret } from './crypto'
 import { getProvider } from './providers/provider-service'
 import type { RenderSize } from './image-options'
-import { normalizeImageModel } from './image-models'
+import { isAgnesImageModel } from './image-models'
 
 const PROVIDER_TIMEOUT_MS = 240_000
 
@@ -30,10 +30,6 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
   })
 }
 
-function isAgnesImageModel(model: string): boolean {
-  return normalizeImageModel(model) === 'agnes-image-2.1-flash'
-}
-
 function buildImageGenerateParams(params: { model: string; prompt: string; size: RenderSize }) {
   return {
     model: params.model,
@@ -41,7 +37,17 @@ function buildImageGenerateParams(params: { model: string; prompt: string; size:
     n: 1,
     size: params.size,
     quality: 'medium',
-    // response_format removed — not supported by agnes-image-2.1-flash (LiteLLM).
+  } as any
+}
+
+function buildAgnesImageGenerateParams(params: { model: string; prompt: string; size: RenderSize }) {
+  return {
+    model: params.model,
+    prompt: params.prompt,
+    size: params.size,
+    extra_body: {
+      response_format: 'url',
+    },
   } as any
 }
 
@@ -257,11 +263,17 @@ export async function testImageProviderDirect(params: {
             size: params.size,
           }))
         })()
-      : await client.images.generate(buildImageGenerateParams({
-          model: provider.model,
-          prompt: params.prompt,
-          size: params.size,
-        }))
+      : isAgnesImageModel(provider.model)
+        ? await client.images.generate(buildAgnesImageGenerateParams({
+            model: provider.model,
+            prompt: params.prompt,
+            size: params.size,
+          }))
+        : await client.images.generate(buildImageGenerateParams({
+            model: provider.model,
+            prompt: params.prompt,
+            size: params.size,
+          }))
 
     const imageData = getCompatibleImageData(response)
     if (!imageData) {

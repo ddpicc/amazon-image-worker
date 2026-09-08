@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { fetchCurrentUser } from '@/lib/dashboard/auth'
-import { SIZE_OPTIONS } from '@/lib/image-options'
+import { is2KRenderSize, SIZE_OPTIONS } from '@/lib/image-options'
 import { taskStatusLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
 
 type TaskStatus = 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
@@ -975,7 +975,18 @@ export default function AdminTestImagePage() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '请求尺寸' : 'Requested Size'}</div>
+              <div className="mt-1 text-sm font-medium text-gray-900">{directResult.size}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '请求档位' : 'Requested Tier'}</div>
+              <div className={`mt-1 inline-flex rounded px-2 py-0.5 text-sm font-semibold ${is2KRenderSize(directResult.size) ? 'bg-purple-100 text-purple-800' : 'bg-gray-200 text-gray-700'}`}>
+                {is2KRenderSize(directResult.size) ? '2K' : '1K'}
+              </div>
+              <div className="mt-1 text-[11px] text-gray-500">{lang === 'zh' ? '按请求尺寸判定' : 'Based on requested size'}</div>
+            </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">{lang === 'zh' ? '图片大小' : 'Image Size'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{formatBytes(directResult.bytes)}</div>

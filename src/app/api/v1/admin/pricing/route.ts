@@ -6,9 +6,10 @@ import {
   listPricingSkus,
 } from '@/lib/billing/price-service'
 import { fenToYuan, yuanToFen } from '@/lib/money'
+import type { PricingSkuCode } from '@/lib/billing/price-service'
 
 const ALLOWED_PRICING_SKUS = new Set(['image_1k', 'image_2k'])
-type PricingInputRow = { sku?: string; price?: number; enabled?: boolean }
+type PricingInputRow = { model?: string; sku?: PricingSkuCode; price?: number; enabled?: boolean }
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       prices: prices.map((row) => ({
         id: row.id,
+        model: row.model,
         sku: row.sku,
         label: row.label,
         priceFen: row.priceFen,
@@ -54,9 +56,9 @@ export async function POST(request: NextRequest) {
     }
 
     for (const row of rows) {
-      if (!row || typeof row.sku !== 'string' || typeof row.price !== 'number') {
+      if (!row || typeof row.model !== 'string' || !row.model.trim() || typeof row.sku !== 'string' || typeof row.price !== 'number') {
         return NextResponse.json(
-          { error: 'each price row must contain sku and price' },
+          { error: 'each price row must contain model, sku and price' },
           { status: 400 },
         )
       }
@@ -70,6 +72,7 @@ export async function POST(request: NextRequest) {
 
     const updated = await batchSetPricingSkus(
       rows.map((row) => ({
+        model: row.model!.trim().toLowerCase(),
         sku: row.sku!,
         priceFen: yuanToFen(row.price!),
         enabled: row.enabled,
@@ -80,6 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       prices: updated.map((row) => ({
         id: row.id,
+        model: row.model,
         sku: row.sku,
         label: row.label,
         priceFen: row.priceFen,

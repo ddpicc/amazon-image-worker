@@ -5,6 +5,7 @@ import { useDashboardI18n } from '@/lib/dashboard/i18n'
 
 interface PriceRow {
   id: string
+  model: string
   sku: string
   label: string
   price: number
@@ -70,7 +71,7 @@ export default function PricingPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">{t('navPricing')}</h2>
-        <p className="text-sm text-gray-500 mt-1">{lang === 'zh' ? '管理生图和编辑任务的 CNY SKU 定价' : 'Manage SKU pricing for image generation and editing in CNY'}</p>
+        <p className="text-sm text-gray-500 mt-1">{lang === 'zh' ? '按模型管理生图和编辑任务的 CNY SKU 定价' : 'Manage model-specific CNY SKU pricing for image generation and editing'}</p>
       </div>
 
       {message && <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">{message}</div>}
@@ -81,6 +82,7 @@ export default function PricingPage() {
           <thead className="bg-gray-50 text-gray-700">
             <tr>
               <th className="px-4 py-3 text-left font-medium">SKU</th>
+              <th className="px-4 py-3 text-left font-medium">Model</th>
               <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '标签' : 'Label'}</th>
               <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '价格（CNY）' : 'Price (CNY)'}</th>
               <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '版本' : 'Version'}</th>
@@ -91,6 +93,7 @@ export default function PricingPage() {
             {prices.map((row, index) => (
               <tr key={row.id} className="border-t border-gray-100">
                 <td className="px-4 py-3 font-mono text-sm font-medium text-gray-900">{row.sku}</td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-700">{row.model}</td>
                 <td className="px-4 py-3 text-gray-700">{row.label}</td>
                 <td className="px-4 py-3">
                   <input

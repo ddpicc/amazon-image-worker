@@ -4,14 +4,33 @@ import { is2KRenderSize, isValidOfficialRenderSize } from '@/lib/image-options'
 
 export type PricingSkuCode = 'image_1k' | 'image_2k'
 
-const DEFAULT_SKU_PRICES: Array<{ sku: PricingSkuCode; label: string; priceFen: number }> = [
-  { sku: 'image_1k', label: 'Image 1K', priceFen: 30 },
-  { sku: 'image_2k', label: 'Image 2K', priceFen: 60 },
+export interface ModelPricingDefaults {
+  model: string
+  prices: Array<{ sku: PricingSkuCode; label: string; priceFen: number }>
+  enabled: boolean
+}
+
+const DEFAULT_MODEL_PRICING: ModelPricingDefaults[] = [
+  {
+    model: 'gpt-image-2',
+    prices: [
+      { sku: 'image_1k', label: 'Image 1K', priceFen: 30 },
+      { sku: 'image_2k', label: 'Image 2K', priceFen: 60 },
+    ],
+    enabled: true,
+  },
+  {
+    model: 'agnes-image-2.5-flash',
+    prices: [
+      { sku: 'image_1k', label: 'Image 1K', priceFen: 30 },
+      { sku: 'image_2k', label: 'Image 2K', priceFen: 60 },
+    ],
+    enabled: true,
+  },
 ]
 
-const PUBLIC_SKUS: PricingSkuCode[] = ['image_1k', 'image_2k']
-
 export interface PublicPriceRow {
+  model: string
   sku: PricingSkuCode
   label: string
   priceFen: number
@@ -45,10 +64,43 @@ export function resolvePricingSkuForSize(size: string): PricingSkuCode | null {
   return is2KRenderSize(normalized) ? 'image_2k' : 'image_1k'
 }
 
+function normalizePricingModel(model: string): string {
+  const normalized = model.trim().toLowerCase()
+  if (!normalized) throw new Error('model is required for pricing')
+  return normalized
+}
+
+function getDefaultPricingForModel(model: string): ModelPricingDefaults {
+  const normalized = normalizePricingModel(model)
+  return DEFAULT_MODEL_PRICING.find((entry) => entry.model === normalized) ?? {
+    model: normalized,
+    prices: [
+      { sku: 'image_1k', label: 'Image 1K', priceFen: 0 },
+      { sku: 'image_2k', label: 'Image 2K', priceFen: 0 },
+    ],
+    enabled: false,
+  }
+}
+
 export async function ensureDefaultPricingSkus(updatedBy?: string) {
-  const existing = await prisma.pricingSku.findMany({ select: { sku: true } })
-  const existingSkus = new Set(existing.map((row) => row.sku))
-  const missing = DEFAULT_SKU_PRICES.filter((row) => !existingSkus.has(row.sku))
+  const providers = await prisma.imageProvider.findMany({
+    select: { publicModel: true },
+    distinct: ['publicModel'],
+  })
+  const models = new Set([
+    ...DEFAULT_MODEL_PRICING.map((entry) => entry.model),
+    ...providers.map((provider) => provider.publicModel),
+  ])
+  const existing = await prisma.pricingSku.findMany({
+    select: { model: true, sku: true },
+  })
+  const existingSkus = new Set(existing.map((row) => `${row.model}:${row.sku}`))
+  const missing = [...models].flatMap((model) => {
+    const defaults = getDefaultPricingForModel(model)
+    return defaults.prices
+      .filter((row) => !existingSkus.has(`${defaults.model}:${row.sku}`))
+      .map((row) => ({ ...row, model: defaults.model, enabled: defaults.enabled }))
+  })
 
   if (missing.length === 0) return []
 
@@ -57,16 +109,18 @@ export async function ensureDefaultPricingSkus(updatedBy?: string) {
     for (const row of missing) {
       const sku = await tx.pricingSku.create({
         data: {
+          model: row.model,
           sku: row.sku,
           label: row.label,
           priceFen: row.priceFen,
-          enabled: true,
+          enabled: row.enabled,
           updatedBy: updatedBy || 'system',
         },
       })
       await tx.pricingSkuPriceHistory.create({
         data: {
           pricingSkuId: sku.id,
+          model: sku.model,
           sku: sku.sku,
           version: sku.version,
           priceFen: sku.priceFen,
@@ -83,12 +137,12 @@ export async function ensureDefaultPricingSkus(updatedBy?: string) {
 export async function listPricingSkus() {
   await ensureDefaultPricingSkus()
   return prisma.pricingSku.findMany({
-    orderBy: { sku: 'asc' },
+    orderBy: [{ model: 'asc' }, { sku: 'asc' }],
   })
 }
 
 export async function batchSetPricingSkus(
-  entries: Array<{ sku: string; priceFen: number; enabled?: boolean }>,
+  entries: Array<{ model: string; sku: PricingSkuCode; priceFen: number; enabled?: boolean }>,
   updatedBy: string,
 ) {
   await ensureDefaultPricingSkus(updatedBy)
@@ -97,7 +151,7 @@ export async function batchSetPricingSkus(
     const updated = []
     for (const entry of entries) {
       const existing = await tx.pricingSku.findUnique({
-        where: { sku: entry.sku },
+        where: { model_sku: { model: normalizePricingModel(entry.model), sku: entry.sku } },
       })
       if (!existing) {
         throw new Error(`Unknown pricing sku: ${entry.sku}`)
@@ -108,7 +162,7 @@ export async function batchSetPricingSkus(
       const nextVersion = priceChanged || enabledChanged ? existing.version + 1 : existing.version
 
       const row = await tx.pricingSku.update({
-        where: { sku: entry.sku },
+        where: { model_sku: { model: normalizePricingModel(entry.model), sku: entry.sku } },
         data: {
           priceFen: entry.priceFen,
           ...(entry.enabled !== undefined ? { enabled: entry.enabled } : {}),
@@ -121,6 +175,7 @@ export async function batchSetPricingSkus(
         await tx.pricingSkuPriceHistory.create({
           data: {
             pricingSkuId: row.id,
+            model: row.model,
             sku: row.sku,
             version: row.version,
             priceFen: row.priceFen,
@@ -136,22 +191,26 @@ export async function batchSetPricingSkus(
   })
 }
 
-export async function lookupPricingForSize(size: string): Promise<{
+export async function lookupPricingForModelAndSize(model: string, size: string): Promise<{
+  model: string
   sku: PricingSkuCode
   unitPriceFen: number
   unitPrice: number
   priceVersion: number
 } | null> {
+  const normalizedModel = normalizePricingModel(model)
   const sku = resolvePricingSkuForSize(size)
   if (!sku) return null
 
+  await ensureDefaultPricingSkus()
   const row = await prisma.pricingSku.findUnique({
-    where: { sku },
+    where: { model_sku: { model: normalizedModel, sku } },
   })
   if (!row || !row.enabled) return null
 
   return {
-    sku,
+    model: row.model,
+    sku: row.sku as PricingSkuCode,
     unitPriceFen: row.priceFen,
     unitPrice: fenToYuan(row.priceFen),
     priceVersion: row.version,
@@ -163,17 +222,22 @@ export function resolvePricingTierForSize(size: string): PricingSkuCode {
 }
 
 export async function listPublicPrices(): Promise<PublicPriceRow[]> {
-  const fallback = DEFAULT_SKU_PRICES.map((row) => ({ ...row, enabled: true }))
+  const fallback = DEFAULT_MODEL_PRICING.flatMap((model) => model.prices.map((row) => ({
+    model: model.model,
+    ...row,
+    enabled: model.enabled,
+  })))
 
   try {
+    await ensureDefaultPricingSkus()
     const rows = await prisma.pricingSku.findMany({
-      where: { sku: { in: PUBLIC_SKUS } },
-      orderBy: { sku: 'asc' },
+      orderBy: [{ model: 'asc' }, { sku: 'asc' }],
     })
     if (rows.length === 0) return fallback
 
     return rows.map((row) => ({
       sku: row.sku as PricingSkuCode,
+      model: row.model,
       label: row.label,
       priceFen: row.priceFen,
       enabled: row.enabled,

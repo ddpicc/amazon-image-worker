@@ -9,7 +9,7 @@ import { selectProviders, markProviderSuccess, markProviderFailure, acquireProvi
 import { classifyError } from './providers/error-classifier'
 import { applyCooldown } from './providers/cooldown'
 import { checkCircuitBreaker, recoverCircuitBreaker, tripCircuitBreaker } from './providers/circuit-breaker'
-import { normalizeImageModel } from './image-models'
+import { isAgnesImageModel } from './image-models'
 import { is2KRenderSize } from './image-options'
 import { prisma } from './db/prisma'
 import { getObjectStorageBackend, uploadBufferToObjectStorage } from './object-storage'
@@ -103,10 +103,6 @@ function createOpenAIClient(apiKey: string, baseURL: string): OpenAI {
   })
 }
 
-function isAgnesImageModel(model: string): boolean {
-  return normalizeImageModel(model) === 'agnes-image-2.1-flash'
-}
-
 function toDataUri(referenceImage: { data: string; mediaType: string }): string {
   return `data:${referenceImage.mediaType || 'image/jpeg'};base64,${referenceImage.data}`
 }
@@ -143,6 +139,21 @@ function buildAgnesImageEditParams(params: {
   } as any
 }
 
+function buildAgnesImageGenerateParams(params: {
+  model: string
+  prompt: string
+  size: RenderSize
+}) {
+  return {
+    model: params.model,
+    prompt: params.prompt,
+    size: params.size,
+    extra_body: {
+      response_format: 'url',
+    },
+  } as any
+}
+
 function buildImageGenerateParams(params: {
   model: string
   prompt: string
@@ -154,7 +165,6 @@ function buildImageGenerateParams(params: {
     n: 1,
     size: params.size,
     quality: 'medium',
-    // response_format removed — not supported by agnes-image-2.1-flash (LiteLLM).
   } as any
 }
 
@@ -616,11 +626,17 @@ async function runImageGenerationForExistingRequest(params: {
                   prompt,
                   size,
                 }))
-            : await client.images.generate(buildImageGenerateParams({
-                model: provider.model,
-                prompt,
-                size,
-              }))
+            : isAgnesImageModel(provider.model)
+              ? await client.images.generate(buildAgnesImageGenerateParams({
+                  model: provider.model,
+                  prompt,
+                  size,
+                }))
+              : await client.images.generate(buildImageGenerateParams({
+                  model: provider.model,
+                  prompt,
+                  size,
+                }))
 
           const imageData = getCompatibleImageData(response)
           if (!imageData) {

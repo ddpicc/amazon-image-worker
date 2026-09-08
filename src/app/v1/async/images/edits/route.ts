@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRequestAuth } from '@/lib/auth/request-auth'
-import { lookupPricingForSize, resolvePublicImageSize } from '@/lib/billing/price-service'
+import { lookupPricingForModelAndSize, resolvePublicImageSize } from '@/lib/billing/price-service'
 import { checkBalance } from '@/lib/billing/billing-service'
 import { fenToYuan } from '@/lib/money'
 import type { RenderSize } from '@/lib/image-options'
@@ -159,10 +159,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const pricing = await lookupPricingForSize(resolvedSize)
+    const pricing = await lookupPricingForModelAndSize(model, resolvedSize)
     if (pricing === null) {
       return NextResponse.json(
-        { error: `No pricing configured for size ${resolvedSize}` },
+        { error: `No pricing configured for model ${model} and size ${resolvedSize}` },
         { status: 400 },
       )
     }

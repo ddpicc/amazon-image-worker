@@ -30,10 +30,10 @@ const copy = {
   badge: '按量计费 · 无最低消费 · 失败自动退款',
   title: '简单透明的价格',
   subtitle:
-    '仅为实际生成的图片付费。价格按图片尺寸档位（1K / 2K）计费，与使用的模型无关，同步与异步接口价格一致。',
+    '仅为实际生成的图片付费。价格按模型和图片尺寸档位（1K / 2K）计费，同步与异步接口价格一致。',
   modelsEyebrow: '模型与价格',
   modelsTitle: '支持的模型',
-  modelsSubtitle: '所有模型共用同一套尺寸价格，生成与编辑接口计费相同。',
+  modelsSubtitle: '不同模型分别定价，生成与编辑接口使用同一模型价格。',
   perImage: '/ 张',
   priceNote: '提交任务时扣费，生成失败自动退回余额。',
   aliasesLabel: '兼容别名',
@@ -41,7 +41,8 @@ const copy = {
   sizesEyebrow: '尺寸明细',
   sizesTitle: '支持的尺寸与价格',
   sizesSubtitle:
-    'size 省略时默认为 1024x1024，也支持符合 GPT-Image-2 约束的任意像素尺寸。以下为常用尺寸示例，实际不受该列表限制。',
+    'size 省略时默认为 1024x1024。以下按模型展示常用尺寸示例，实际支持的尺寸以 API 校验为准。',
+  colModel: '模型',
   colSize: '像素尺寸',
   colTier: '计费档位',
   colPrice: '价格',
@@ -51,7 +52,7 @@ const copy = {
   notesEyebrow: '计费说明',
   notesTitle: '计费规则',
   note1: '提交任务时按尺寸档位扣费，任务失败费用自动退回账户余额，无最低消费。',
-  note2: '价格只与图片尺寸档位有关，与模型和 quality 参数无关。',
+  note2: '价格由模型和图片尺寸档位共同决定。',
   note3: 'quality 参数（low / medium / high，默认 medium）仅 gpt-image-2 支持，不影响价格。',
   note4: '当前每次请求生成 1 张图片（n=1），支持 Idempotency-Key 防止重复扣费。',
   note5: '余额以人民币（CNY）计，支持微信支付充值，控制台可查询订单与消费明细。',
@@ -77,7 +78,7 @@ const models: Array<{
     aliases: ['gpt-image2-1k', 'gpt-image-2-1k'],
   },
   {
-    name: 'agnes-image-2.1-flash',
+    name: 'agnes-image-2.5-flash',
     tag: '快速模型',
     desc: 'Flash 快速出图模型，适合批量预览、草稿迭代等对速度敏感的场景，生成与编辑接口均可用。',
     quality: '不支持 quality 参数（仅 gpt-image-2 支持）',
@@ -106,14 +107,30 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
     }
   }, [])
 
-  const priceBySku = useMemo(() => {
-    const map = new Map<string, PublicPriceRow>()
-    for (const row of prices) map.set(row.sku, row)
+  const priceByModel = useMemo(() => {
+    const map = new Map<string, Map<string, PublicPriceRow>>()
+    for (const row of prices) {
+      const modelPrices = map.get(row.model) ?? new Map<string, PublicPriceRow>()
+      modelPrices.set(row.sku, row)
+      map.set(row.model, modelPrices)
+    }
     return map
   }, [prices])
 
-  const tier1k = priceBySku.get('image_1k')
-  const tier2k = priceBySku.get('image_2k')
+  const configuredModelNames = useMemo(
+    () => Array.from(new Set([...models.map((model) => model.name), ...prices.map((row) => row.model)])),
+    [prices],
+  )
+
+  const getPrice = (model: string, sku: string) => priceByModel.get(model)?.get(sku)
+
+  const modelCards = configuredModelNames.map((modelName) => models.find((model) => model.name === modelName) ?? {
+    name: modelName,
+    tag: '可用模型',
+    desc: '该模型已接入并可单独配置 1K / 2K 定价。',
+    quality: '以该模型的上游接口能力为准',
+    aliases: [],
+  })
 
   const sizeRows = useMemo(
     () =>
@@ -222,24 +239,34 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
             {copy.subtitle}
           </p>
 
-          <div className="mx-auto mt-10 grid max-w-2xl gap-4 sm:grid-cols-2">
-            {[
-              { label: '1K 档（总像素 ≤ 3,686,400）', row: tier1k },
-              { label: '2K 档（总像素 > 3,686,400）', row: tier2k },
-            ].map(({ label, row }) => (
-              <div key={label} className="rounded-xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
-                <p className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900">
-                  {formatPrice(row?.priceFen)}
-                  <span className="ml-1 text-sm font-medium text-gray-500">{copy.perImage}</span>
-                </p>
-                {row && !row.enabled && (
-                  <p className="mt-1 inline-flex rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
-                    {copy.disabledTag}
-                  </p>
-                )}
-              </div>
-            ))}
+          <div className="mx-auto mt-10 max-w-3xl overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-700">
+                  <tr>
+                    <th className="px-5 py-3 text-left font-medium">{copy.colModel}</th>
+                    <th className="px-5 py-3 text-right font-medium">1K</th>
+                    <th className="px-5 py-3 text-right font-medium">2K</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {configuredModelNames.map((modelName) => (
+                    <tr key={modelName} className="border-t border-gray-100">
+                      <td className="px-5 py-3 font-mono text-gray-900">{modelName}</td>
+                      {(['image_1k', 'image_2k'] as const).map((sku) => {
+                        const row = getPrice(modelName, sku)
+                        return (
+                          <td key={sku} className="px-5 py-3 text-right font-medium text-gray-900">
+                            {row && !row.enabled ? copy.disabledTag : formatPrice(row?.priceFen)}
+                            {row?.enabled && <span className="ml-1 text-xs font-normal text-gray-400">{copy.perImage}</span>}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
@@ -254,7 +281,7 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
           </div>
 
           <div className="mt-12 grid gap-5 lg:grid-cols-2">
-            {models.map((model) => (
+            {modelCards.map((model) => (
               <div
                 key={model.name}
                 className="flex flex-col rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8"
@@ -283,8 +310,8 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
 
                 <div className="mt-6 grid grid-cols-2 gap-3 border-t border-gray-100 pt-6">
                   {[
-                    { tier: copy.tier1k, row: tier1k },
-                    { tier: copy.tier2k, row: tier2k },
+                    { tier: copy.tier1k, row: getPrice(model.name, 'image_1k') },
+                    { tier: copy.tier2k, row: getPrice(model.name, 'image_2k') },
                   ].map(({ tier, row }) => (
                     <div key={tier} className="rounded-lg bg-gray-50 px-4 py-3">
                       <p className="text-xs font-medium text-gray-500">{tier}</p>
@@ -319,6 +346,7 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 text-gray-700">
                   <tr>
+                    <th className="px-5 py-3 text-left font-medium">{copy.colModel}</th>
                     <th className="px-5 py-3 text-left font-medium">{copy.colSize}</th>
                     <th className="px-5 py-3 text-left font-medium">{copy.colTier}</th>
                     <th className="px-5 py-3 text-right font-medium">{copy.colPrice}</th>
@@ -326,27 +354,30 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
                 </thead>
                 <tbody>
                   {sizeRows.map((row) => {
-                    const price = priceBySku.get(row.tier)
-                    return (
-                      <tr key={row.size} className="border-t border-gray-100">
-                        <td className="px-5 py-3 font-mono text-gray-900">{row.size}</td>
-                        <td className="px-5 py-3">
-                          <span className="inline-flex whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
-                            {row.tier === 'image_1k' ? copy.tier1k : copy.tier2k}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-right font-medium text-gray-900">
-                          {price && !price.enabled ? (
-                            <span className="text-xs font-normal text-red-500">{copy.disabledTag}</span>
-                          ) : (
-                            <>
-                              {formatPrice(price?.priceFen)}
-                              <span className="ml-0.5 text-xs font-normal text-gray-400">{copy.perImage}</span>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    )
+                    return configuredModelNames.map((modelName) => {
+                      const price = getPrice(modelName, row.tier)
+                      return (
+                        <tr key={`${modelName}:${row.size}`} className="border-t border-gray-100">
+                          <td className="px-5 py-3 font-mono text-xs text-gray-700">{modelName}</td>
+                          <td className="px-5 py-3 font-mono text-gray-900">{row.size}</td>
+                          <td className="px-5 py-3">
+                            <span className="inline-flex whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                              {row.tier === 'image_1k' ? copy.tier1k : copy.tier2k}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right font-medium text-gray-900">
+                            {price && !price.enabled ? (
+                              <span className="text-xs font-normal text-red-500">{copy.disabledTag}</span>
+                            ) : (
+                              <>
+                                {formatPrice(price?.priceFen)}
+                                <span className="ml-0.5 text-xs font-normal text-gray-400">{copy.perImage}</span>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
                   })}
                 </tbody>
               </table>
