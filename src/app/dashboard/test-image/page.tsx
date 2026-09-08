@@ -66,6 +66,9 @@ interface DirectTestResult {
   upstreamImageUrl: string | null
   mimeType: string
   bytes: number
+  actualImageWidth: number | null
+  actualImageHeight: number | null
+  actualImageTier: '1K' | '2K' | null
   imageBase64: string
 }
 
@@ -975,7 +978,7 @@ export default function AdminTestImagePage() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">{lang === 'zh' ? '请求尺寸' : 'Requested Size'}</div>
               <div className="mt-1 text-sm font-medium text-gray-900">{directResult.size}</div>
@@ -986,6 +989,13 @@ export default function AdminTestImagePage() {
                 {is2KRenderSize(directResult.size) ? '2K' : '1K'}
               </div>
               <div className="mt-1 text-[11px] text-gray-500">{lang === 'zh' ? '按请求尺寸判定' : 'Based on requested size'}</div>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">{lang === 'zh' ? '实际返回档位' : 'Actual Returned Tier'}</div>
+              <div className={`mt-1 inline-flex rounded px-2 py-0.5 text-sm font-semibold ${directResult.actualImageTier === '2K' ? 'bg-purple-100 text-purple-800' : directResult.actualImageTier === '1K' ? 'bg-gray-200 text-gray-700' : 'bg-amber-100 text-amber-800'}`}>
+                {directResult.actualImageTier || (lang === 'zh' ? '未知' : 'Unknown')}
+              </div>
+              <div className="mt-1 text-[11px] text-gray-500">{lang === 'zh' ? '按返回图片像素判定' : 'Based on returned pixels'}</div>
             </div>
             <div className="rounded border border-gray-200 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">{lang === 'zh' ? '图片大小' : 'Image Size'}</div>

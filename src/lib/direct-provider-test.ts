@@ -100,6 +100,111 @@ function parseBase64Payload(base64: string, mimeType = 'image/png'): { buffer: B
   }
 }
 
+interface ImageDimensions {
+  width: number
+  height: number
+}
+
+function readImageDimensions(buffer: Buffer): ImageDimensions | null {
+  if (buffer.length >= 24 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20),
+    }
+  }
+
+  if (buffer.length >= 10 && (buffer.subarray(0, 6).toString('ascii') === 'GIF87a' || buffer.subarray(0, 6).toString('ascii') === 'GIF89a')) {
+    return {
+      width: buffer.readUInt16LE(6),
+      height: buffer.readUInt16LE(8),
+    }
+  }
+
+  if (buffer.length >= 30 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+    const chunkType = buffer.subarray(12, 16).toString('ascii')
+
+    if (chunkType === 'VP8X') {
+      return {
+        width: 1 + buffer[24] + (buffer[25] << 8) + (buffer[26] << 16),
+        height: 1 + buffer[27] + (buffer[28] << 8) + (buffer[29] << 16),
+      }
+    }
+
+    if (chunkType === 'VP8 ' && buffer.length >= 30) {
+      return {
+        width: buffer.readUInt16LE(26) & 0x3fff,
+        height: buffer.readUInt16LE(28) & 0x3fff,
+      }
+    }
+
+    if (chunkType === 'VP8L' && buffer.length >= 25 && buffer[20] === 0x2f) {
+      const bits = buffer[21] | (buffer[22] << 8) | (buffer[23] << 16) | (buffer[24] << 24)
+      return {
+        width: 1 + (bits & 0x3fff),
+        height: 1 + ((bits >> 14) & 0x3fff),
+      }
+    }
+  }
+
+  if (buffer.length >= 26 && buffer.subarray(0, 2).toString('ascii') === 'BM') {
+    const width = buffer.readInt32LE(18)
+    const height = buffer.readInt32LE(22)
+    if (width > 0 && height !== 0) {
+      return { width, height: Math.abs(height) }
+    }
+  }
+
+  if (buffer.length >= 10 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2
+    while (offset + 3 < buffer.length) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1
+        continue
+      }
+
+      while (offset < buffer.length && buffer[offset] === 0xff) offset += 1
+      if (offset >= buffer.length) break
+
+      const marker = buffer[offset]
+      offset += 1
+      if (marker === 0xd9 || marker === 0xda) break
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue
+      if (offset + 1 >= buffer.length) break
+
+      const segmentLength = buffer.readUInt16BE(offset)
+      if (segmentLength < 2 || offset + segmentLength > buffer.length) break
+
+      const isStartOfFrame = (marker >= 0xc0 && marker <= 0xc3)
+        || (marker >= 0xc5 && marker <= 0xc7)
+        || (marker >= 0xc9 && marker <= 0xcb)
+        || (marker >= 0xcd && marker <= 0xcf)
+      if (isStartOfFrame && offset + 7 < buffer.length) {
+        return {
+          height: buffer.readUInt16BE(offset + 3),
+          width: buffer.readUInt16BE(offset + 5),
+        }
+      }
+
+      offset += segmentLength
+    }
+  }
+
+  return null
+}
+
+function getActualImageTier(buffer: Buffer): { width: number | null; height: number | null; tier: '1K' | '2K' | null } {
+  const dimensions = readImageDimensions(buffer)
+  if (!dimensions) {
+    return { width: null, height: null, tier: null }
+  }
+
+  return {
+    width: dimensions.width,
+    height: dimensions.height,
+    tier: dimensions.width * dimensions.height > 2560 * 1440 ? '2K' : '1K',
+  }
+}
+
 function getCompatibleImageData(response: any): any {
   if (Array.isArray(response?.data) && response.data.length > 0) {
     return response.data[0]
@@ -213,6 +318,9 @@ export interface DirectProviderTestResult {
   upstreamImageUrl: string | null
   mimeType: string
   bytes: number
+  actualImageWidth: number | null
+  actualImageHeight: number | null
+  actualImageTier: '1K' | '2K' | null
   imageBase64: string
 }
 
@@ -281,6 +389,7 @@ export async function testImageProviderDirect(params: {
     }
 
     const extracted = await extractUpstreamImage(imageData)
+    const actualImage = getActualImageTier(extracted.buffer)
     const revisedPrompt = imageData.revised_prompt || imageData.revisedPrompt || params.prompt
 
     return {
@@ -305,6 +414,9 @@ export async function testImageProviderDirect(params: {
       upstreamImageUrl: extracted.imageUrl,
       mimeType: extracted.mimeType,
       bytes: extracted.buffer.byteLength,
+      actualImageWidth: actualImage.width,
+      actualImageHeight: actualImage.height,
+      actualImageTier: actualImage.tier,
       imageBase64: extracted.buffer.toString('base64'),
     }
   } catch (error) {
