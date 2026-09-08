@@ -37,6 +37,12 @@ export default function BillingPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [selectedUserId, setSelectedUserId] = useState('')
+  const [userSearchInput, setUserSearchInput] = useState('')
+  const [userSearch, setUserSearch] = useState('')
+  const [userStatus, setUserStatus] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const [userRole, setUserRole] = useState<'all' | 'ADMIN' | 'USER'>('all')
+  const [userPage, setUserPage] = useState(1)
+  const [userTotalPages, setUserTotalPages] = useState(1)
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
   const [adjusting, setAdjusting] = useState(false)
@@ -44,13 +50,20 @@ export default function BillingPage() {
   async function loadUsers() {
     setLoadingUsers(true)
     try {
-      const res = await fetch('/api/v1/admin/users', { cache: 'no-store' })
+      const params = new URLSearchParams({ page: String(userPage), limit: '20' })
+      if (userSearch) params.set('q', userSearch)
+      if (userStatus !== 'all') params.set('status', userStatus)
+      if (userRole !== 'all') params.set('role', userRole)
+      const res = await fetch(`/api/v1/admin/users?${params.toString()}`, { cache: 'no-store' })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(body.error || (lang === 'zh' ? '加载用户失败' : 'Failed to load users'))
         return
       }
       setUsers(body.users || [])
+      const nextTotalPages = body.totalPages || 1
+      setUserTotalPages(nextTotalPages)
+      if (userPage > nextTotalPages) setUserPage(nextTotalPages)
     } finally {
       setLoadingUsers(false)
     }
@@ -73,13 +86,28 @@ export default function BillingPage() {
 
   useEffect(() => {
     loadUsers()
+  }, [userPage, userRole, userSearch, userStatus])
+
+  useEffect(() => {
     loadUsage()
   }, [])
+
+  function submitUserSearch(event: React.FormEvent) {
+    event.preventDefault()
+    setUserPage(1)
+    setUserSearch(userSearchInput.trim())
+  }
 
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId) || null,
     [users, selectedUserId],
   )
+
+  useEffect(() => {
+    if (selectedUserId && !users.some((user) => user.id === selectedUserId)) {
+      setSelectedUserId('')
+    }
+  }, [selectedUserId, users])
 
   async function submitAdjustment(e: React.FormEvent) {
     e.preventDefault()
@@ -150,34 +178,64 @@ export default function BillingPage() {
             <div className="px-4 py-3 border-b border-gray-100">
               <h3 className="font-semibold text-gray-900">{t('navUsers')}</h3>
             </div>
+            <form onSubmit={submitUserSearch} className="flex flex-col gap-2 border-b border-gray-100 p-4 sm:flex-row">
+              <input
+                value={userSearchInput}
+                onChange={(event) => setUserSearchInput(event.target.value)}
+                className="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2 text-sm"
+                placeholder={lang === 'zh' ? '搜索邮箱或姓名' : 'Search email or name'}
+              />
+              <select value={userStatus} onChange={(event) => { setUserStatus(event.target.value as typeof userStatus); setUserPage(1) }} className="rounded border border-gray-300 px-3 py-2 text-sm">
+                <option value="all">{lang === 'zh' ? '全部状态' : 'All statuses'}</option>
+                <option value="enabled">{t('enabled')}</option>
+                <option value="disabled">{t('disabled')}</option>
+              </select>
+              <select value={userRole} onChange={(event) => { setUserRole(event.target.value as typeof userRole); setUserPage(1) }} className="rounded border border-gray-300 px-3 py-2 text-sm">
+                <option value="all">{lang === 'zh' ? '全部角色' : 'All roles'}</option>
+                <option value="USER">{roleLabel(lang, 'USER')}</option>
+                <option value="ADMIN">{roleLabel(lang, 'ADMIN')}</option>
+              </select>
+              <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">{lang === 'zh' ? '搜索' : 'Search'}</button>
+            </form>
             {loadingUsers ? (
               <div className="p-4 text-gray-500">{lang === 'zh' ? '正在加载用户...' : 'Loading users...'}</div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-700">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium">{t('email')}</th>
-                    <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '角色' : 'Role'}</th>
-                    <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '余额' : 'Balance'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr
-                      key={user.id}
-                      className={`border-t border-gray-100 cursor-pointer ${selectedUserId === user.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                      onClick={() => setSelectedUserId(user.id)}
-                    >
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{user.email}</div>
-                        {user.name ? <div className="text-xs text-gray-500">{user.name}</div> : null}
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">{roleLabel(lang, user.role)}</td>
-                      <td className="px-4 py-3 font-medium text-gray-900">¥{user.balance.toFixed(2)}</td>
+              <>
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-700">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium">{t('email')}</th>
+                      <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '角色' : 'Role'}</th>
+                      <th className="px-4 py-3 text-left font-medium">{lang === 'zh' ? '余额' : 'Balance'}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {users.length === 0 ? (
+                      <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400">{lang === 'zh' ? '没有找到用户' : 'No users found'}</td></tr>
+                    ) : users.map((user) => (
+                      <tr
+                        key={user.id}
+                        className={`border-t border-gray-100 cursor-pointer ${selectedUserId === user.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                        onClick={() => setSelectedUserId(user.id)}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-gray-900">{user.email}</div>
+                          {user.name ? <div className="text-xs text-gray-500">{user.name}</div> : null}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{roleLabel(lang, user.role)}</td>
+                        <td className="px-4 py-3 font-medium text-gray-900">¥{user.balance.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm text-gray-600">
+                  <span>{lang === 'zh' ? `第 ${userPage} / ${userTotalPages} 页` : `Page ${userPage} of ${userTotalPages}`}</span>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setUserPage((current) => Math.max(1, current - 1))} disabled={userPage <= 1} className="rounded border border-gray-300 px-3 py-1.5 disabled:opacity-40">{t('previous')}</button>
+                    <button type="button" onClick={() => setUserPage((current) => Math.min(userTotalPages, current + 1))} disabled={userPage >= userTotalPages} className="rounded border border-gray-300 px-3 py-1.5 disabled:opacity-40">{t('next')}</button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
 

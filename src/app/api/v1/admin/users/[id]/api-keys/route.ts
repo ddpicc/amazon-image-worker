@@ -15,7 +15,7 @@ export async function GET(
     const { id } = await params
 
     const keys = await prisma.apiKey.findMany({
-      where: { ownerUserId: id },
+      where: { ownerUserId: id, revokedAt: null },
       include: { quota: true },
       orderBy: { createdAt: 'desc' },
     })

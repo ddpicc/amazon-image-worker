@@ -68,6 +68,7 @@ export async function ensureAdminTestApiKey(ownerUserId: string): Promise<Create
           keyHash,
           keyPrefix,
           enabled: true,
+          revokedAt: null,
         },
       })
     : await prisma.apiKey.create({
@@ -124,13 +125,13 @@ export async function rotateApiKeyForUser(keyId: string, ownerUserId: string): P
 export async function revokeApiKeyForUser(keyId: string, ownerUserId: string): Promise<void> {
   await prisma.apiKey.updateMany({
     where: { id: keyId, ownerUserId },
-    data: { enabled: false },
+    data: { enabled: false, revokedAt: new Date() },
   })
 }
 
 export async function listApiKeysByUser(ownerUserId: string) {
   return prisma.apiKey.findMany({
-    where: { ownerUserId },
+    where: { ownerUserId, revokedAt: null },
     include: { quota: true },
     orderBy: { createdAt: 'desc' },
   })
@@ -138,13 +139,16 @@ export async function listApiKeysByUser(ownerUserId: string) {
 
 export async function getApiKeyByIdForUser(id: string, ownerUserId: string) {
   return prisma.apiKey.findFirst({
-    where: { id, ownerUserId },
+    where: { id, ownerUserId, revokedAt: null },
     include: { quota: true },
   })
 }
 
 export async function listAllApiKeysForAdmin() {
   return prisma.apiKey.findMany({
+    // Admins can revoke keys but cannot re-enable them from this page. Keep
+    // revoked and already-disabled keys out of the management list.
+    where: { enabled: true, revokedAt: null },
     include: {
       quota: true,
       ownerUser: {

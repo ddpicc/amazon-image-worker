@@ -36,7 +36,7 @@ interface UserApiKey {
 interface UserTask {
   id: string
   prompt: string
-  status: 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
+  status: 'STARTED' | 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
   createdAt: string
   selectedProviderName: string | null
   apiKey: { id: string; name: string; keyPrefix: string } | null
@@ -53,10 +53,21 @@ export default function UsersPage() {
   const [userKeys, setUserKeys] = useState<Record<string, UserApiKey[]>>({})
   const [userTasks, setUserTasks] = useState<Record<string, UserTask[]>>({})
   const [detailLoading, setDetailLoading] = useState<string | null>(null)
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'ADMIN' | 'USER'>('all')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
 
   const fetchUsers = useCallback(async () => {
+    setLoading(true)
     try {
-      const res = await fetch('/api/v1/admin/users')
+      const params = new URLSearchParams({ page: String(page), limit: '20' })
+      if (search) params.set('q', search)
+      if (statusFilter !== 'all') params.set('status', statusFilter)
+      if (roleFilter !== 'all') params.set('role', roleFilter)
+      const res = await fetch(`/api/v1/admin/users?${params.toString()}`, { cache: 'no-store' })
       if (res.status === 401 || res.status === 403) {
         router.push('/dashboard')
         return
@@ -64,13 +75,16 @@ export default function UsersPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
       setUsers(json.users ?? [])
+      const nextTotalPages = json.totalPages ?? 1
+      setTotalPages(nextTotalPages)
+      if (page > nextTotalPages) setPage(nextTotalPages)
       setError('')
     } catch {
       setError(lang === 'zh' ? '加载用户失败' : 'Failed to load users')
     } finally {
       setLoading(false)
     }
-  }, [router])
+  }, [lang, page, roleFilter, router, search, statusFilter])
 
   useEffect(() => {
     fetchCurrentUser().then((user) => {
@@ -85,6 +99,12 @@ export default function UsersPage() {
       fetchUsers()
     })
   }, [fetchUsers, router])
+
+  function submitSearch(event: React.FormEvent) {
+    event.preventDefault()
+    setPage(1)
+    setSearch(searchInput.trim())
+  }
 
   async function toggleUser(user: UserRow) {
     setActionLoading(user.id)
@@ -150,6 +170,26 @@ export default function UsersPage() {
           {error}
         </div>
       )}
+
+      <form onSubmit={submitSearch} className="mb-4 flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:flex-row md:items-center">
+        <input
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          className="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2 text-sm text-gray-900"
+          placeholder={lang === 'zh' ? '搜索邮箱或姓名' : 'Search email or name'}
+        />
+        <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as typeof statusFilter); setPage(1) }} className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900">
+          <option value="all">{lang === 'zh' ? '全部状态' : 'All statuses'}</option>
+          <option value="enabled">{t('enabled')}</option>
+          <option value="disabled">{t('disabled')}</option>
+        </select>
+        <select value={roleFilter} onChange={(event) => { setRoleFilter(event.target.value as typeof roleFilter); setPage(1) }} className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900">
+          <option value="all">{lang === 'zh' ? '全部角色' : 'All roles'}</option>
+          <option value="USER">{roleLabel(lang, 'USER')}</option>
+          <option value="ADMIN">{roleLabel(lang, 'ADMIN')}</option>
+        </select>
+        <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">{lang === 'zh' ? '搜索' : 'Search'}</button>
+      </form>
 
       <div className="rounded-lg shadow-sm border border-gray-200 bg-white overflow-hidden">
         <div className="overflow-x-auto">
@@ -288,6 +328,13 @@ export default function UsersPage() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 text-sm text-gray-600">
+          <span>{lang === 'zh' ? `第 ${page} / ${totalPages} 页` : `Page ${page} of ${totalPages}`}</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="rounded border border-gray-300 px-3 py-1.5 disabled:opacity-40">{t('previous')}</button>
+            <button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page >= totalPages} className="rounded border border-gray-300 px-3 py-1.5 disabled:opacity-40">{t('next')}</button>
+          </div>
         </div>
       </div>
     </div>

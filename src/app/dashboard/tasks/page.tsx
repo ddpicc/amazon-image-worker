@@ -6,7 +6,7 @@ import { fetchCurrentUser, type DashboardUser } from '@/lib/dashboard/auth'
 import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
 import { taskStatusLabel, useDashboardI18n, type DashboardLanguage } from '@/lib/dashboard/i18n'
 
-type TaskStatus = 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
+type TaskStatus = 'STARTED' | 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
 
 interface Task {
   id: string
@@ -108,6 +108,7 @@ interface ResponseSnapshot {
 
 function StatusBadge({ status, lang }: { status: TaskStatus; lang: DashboardLanguage }) {
   const styles: Record<TaskStatus, string> = {
+    STARTED: 'bg-blue-100 text-blue-800',
     QUEUED: 'bg-gray-100 text-gray-800',
     PROCESSING: 'bg-yellow-100 text-yellow-800',
     SUCCEEDED: 'bg-green-100 text-green-800',

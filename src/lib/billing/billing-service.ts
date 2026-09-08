@@ -92,6 +92,21 @@ export async function adjustBalance(
       },
     })
 
+    await tx.auditLog.create({
+      data: {
+        actorUserId: adminUserId,
+        targetUserId: userId,
+        action: 'user.balance_adjusted',
+        resourceType: 'user_balance',
+        resourceId: userId,
+        metadata: {
+          amountFen,
+          reason: reason ?? null,
+          balanceAfterFen: updated.balanceFen,
+        },
+      },
+    })
+
     return updated
   })
 

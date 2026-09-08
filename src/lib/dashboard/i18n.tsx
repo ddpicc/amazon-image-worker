@@ -180,6 +180,7 @@ const zh = {
   attemptTotal: '单次尝试总耗时',
   requestTotal: '请求总耗时',
   statusQueued: '排队中',
+  statusStarted: '已开始',
   statusProcessing: '处理中',
   statusSucceeded: '成功',
   statusFailed: '失败',
@@ -227,8 +228,9 @@ export function roleLabel(lang: DashboardLanguage, role: 'ADMIN' | 'USER') {
   return role === 'ADMIN' ? zh.roleAdmin : zh.roleUser
 }
 
-export function taskStatusLabel(lang: DashboardLanguage, status: 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED') {
+export function taskStatusLabel(lang: DashboardLanguage, status: 'STARTED' | 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED') {
   const map = {
+    STARTED: zh.statusStarted,
     QUEUED: zh.statusQueued,
     PROCESSING: zh.statusProcessing,
     SUCCEEDED: zh.statusSucceeded,

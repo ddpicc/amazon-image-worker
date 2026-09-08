@@ -197,7 +197,7 @@ export default function PaymentsPage() {
                   <td className="px-4 py-3 text-gray-700">{paymentStatusLabel(lang, order.status)}</td>
                   <td className="px-4 py-3">
                     {isAdmin ? (
-                      order.status !== 'PAID' ? (
+                      order.status === 'PENDING' ? (
                         <button onClick={() => settleOrder(order.id)} className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">
                           {t('manualSettle')}
                         </button>

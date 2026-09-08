@@ -148,6 +148,7 @@ model ApiKey {
   keyHash     String   @unique
   keyPrefix   String
   enabled     Boolean  @default(true)
+  revokedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   ownerUser   User?    @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)

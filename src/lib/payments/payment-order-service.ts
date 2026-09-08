@@ -372,12 +372,17 @@ export async function settlePaymentOrderManually(params: {
       id: true,
       outTradeNo: true,
       amountFen: true,
+      status: true,
       providerOrderId: true,
     },
   })
 
   if (!order) {
     throw new Error('订单不存在')
+  }
+
+  if (order.status !== PaymentOrderStatus.PENDING) {
+    throw new Error('只有待支付订单可以手工入账')
   }
 
   await applyPaymentOrderSuccess({

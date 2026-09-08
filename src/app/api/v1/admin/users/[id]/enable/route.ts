@@ -14,15 +14,38 @@ export async function POST(
 
     const { id } = await params
 
-    const updated = await prisma.user.update({
+    const target = await prisma.user.findUnique({
       where: { id },
-      data: { enabled: true },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        enabled: true,
-      },
+      select: { id: true, role: true },
+    })
+    if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (target.role === 'ADMIN' || target.id === result.auth.userId) {
+      return NextResponse.json({ error: '管理员账号不能通过此接口切换状态' }, { status: 403 })
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id },
+        data: { enabled: true },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          enabled: true,
+        },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: result.auth.userId,
+          targetUserId: id,
+          action: 'user.enabled',
+          resourceType: 'user',
+          resourceId: id,
+        },
+      })
+
+      return user
     })
 
     return NextResponse.json({ data: updated })

@@ -22,7 +22,7 @@ export async function PUT(
     }
 
     const existing = auth.role === 'ADMIN'
-      ? await prisma.apiKey.findUnique({ where: { id }, include: { quota: true } })
+      ? await prisma.apiKey.findFirst({ where: { id, revokedAt: null }, include: { quota: true } })
       : await getApiKeyByIdForUser(id, auth.userId)
 
     if (!existing) {
@@ -63,7 +63,7 @@ export async function DELETE(
     if (auth.role === 'ADMIN') {
       await prisma.apiKey.update({
         where: { id },
-        data: { enabled: false },
+        data: { enabled: false, revokedAt: new Date() },
       })
     } else {
       await revokeApiKeyForUser(id, auth.userId)

@@ -7,7 +7,7 @@ import { fetchCurrentUser } from '@/lib/dashboard/auth'
 import { is2KRenderSize, SIZE_OPTIONS } from '@/lib/image-options'
 import { taskStatusLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
 
-type TaskStatus = 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
+type TaskStatus = 'STARTED' | 'QUEUED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
 type TestMode = 'queue' | 'direct'
 type ApiExecutionMode = 'async' | 'sync'
 

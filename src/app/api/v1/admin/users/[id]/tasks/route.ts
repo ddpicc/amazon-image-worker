@@ -24,7 +24,12 @@ export async function GET(
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: {
+      select: {
+        id: true,
+        prompt: true,
+        status: true,
+        createdAt: true,
+        selectedProviderName: true,
         apiKey: {
           select: {
             id: true,

@@ -14,19 +14,39 @@ export async function POST(
 
     const { id } = await params
 
-    const updated = await prisma.user.update({
+    const target = await prisma.user.findUnique({
       where: { id },
-      data: { enabled: false },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        enabled: true,
-      },
+      select: { id: true, role: true },
     })
+    if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (target.role === 'ADMIN' || target.id === result.auth.userId) {
+      return NextResponse.json({ error: '管理员账号不能被禁用' }, { status: 403 })
+    }
 
-    await prisma.session.deleteMany({
-      where: { userId: id },
+    const updated = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id },
+        data: { enabled: false },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          enabled: true,
+        },
+      })
+
+      await tx.session.deleteMany({ where: { userId: id } })
+      await tx.auditLog.create({
+        data: {
+          actorUserId: result.auth.userId,
+          targetUserId: id,
+          action: 'user.disabled',
+          resourceType: 'user',
+          resourceId: id,
+        },
+      })
+
+      return user
     })
 
     return NextResponse.json({ data: updated })

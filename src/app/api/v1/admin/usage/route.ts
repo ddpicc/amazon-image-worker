@@ -16,12 +16,21 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 20))
     const fromParam = searchParams.get('from')
     const toParam = searchParams.get('to')
+    const from = fromParam ? new Date(fromParam) : undefined
+    const to = toParam ? new Date(toParam) : undefined
+
+    if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+      return NextResponse.json({ error: '日期参数不合法' }, { status: 400 })
+    }
+    if (from && to && from > to) {
+      return NextResponse.json({ error: '开始日期不能晚于结束日期' }, { status: 400 })
+    }
 
     const data = await getUsageHistory({
       userId,
       apiKeyId,
-      from: fromParam ? new Date(fromParam) : undefined,
-      to: toParam ? new Date(toParam) : undefined,
+      from,
+      to,
       page,
       limit,
     })

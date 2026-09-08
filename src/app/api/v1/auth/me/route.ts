@@ -70,17 +70,30 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'No changes provided' }, { status: 400 })
     }
 
-    const user = await prisma.user.update({
-      where: { id: session.user.id },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        enabled: true,
-        balanceFen: true,
-      },
+    const user = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: session.user.id },
+        data: updateData,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          enabled: true,
+          balanceFen: true,
+        },
+      })
+
+      if (newPassword !== undefined) {
+        await tx.session.deleteMany({
+          where: {
+            userId: session.user.id,
+            id: { not: session.id },
+          },
+        })
+      }
+
+      return updated
     })
 
     return NextResponse.json({

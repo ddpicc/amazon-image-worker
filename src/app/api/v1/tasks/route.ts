@@ -12,7 +12,12 @@ export async function GET(request: NextRequest) {
     const { auth } = result
 
     const { searchParams } = request.nextUrl
-    const status = searchParams.get('status') || undefined
+    const requestedStatus = searchParams.get('status') || undefined
+    const validStatuses = ['STARTED', 'QUEUED', 'PROCESSING', 'SUCCEEDED', 'FAILED'] as const
+    if (requestedStatus && !validStatuses.includes(requestedStatus as typeof validStatuses[number])) {
+      return NextResponse.json({ error: 'Invalid task status' }, { status: 400 })
+    }
+    const status = requestedStatus as typeof validStatuses[number] | undefined
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 20))
     const skip = (page - 1) * limit
