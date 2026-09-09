@@ -43,6 +43,12 @@ export const SIZE_OPTIONS: SizeOption[] = [
     aspectRatio: '1:1',
   },
   {
+    value: '1600x1600',
+    label: '1600 × 1600',
+    note: 'Amazon listing square output',
+    aspectRatio: '1:1',
+  },
+  {
     value: '2048x2048',
     label: '2048 × 2048',
     note: 'High-resolution square output for sharper export tests',
@@ -55,8 +61,8 @@ export const SIZE_OPTIONS: SizeOption[] = [
     aspectRatio: '3:2',
   },
   {
-    value: '2048x1365',
-    label: '2048 × 1365',
+    value: '2048x1360',
+    label: '2048 × 1360',
     note: 'Higher-resolution landscape output for wider scene testing',
     aspectRatio: '3:2',
   },
@@ -67,8 +73,8 @@ export const SIZE_OPTIONS: SizeOption[] = [
     aspectRatio: '2:3',
   },
   {
-    value: '1365x2048',
-    label: '1365 × 2048',
+    value: '1360x2048',
+    label: '1360 × 2048',
     note: 'Higher-resolution portrait output for tall compositions',
     aspectRatio: '2:3',
   },
