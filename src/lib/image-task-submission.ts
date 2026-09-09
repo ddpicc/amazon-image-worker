@@ -192,8 +192,12 @@ async function compensateFailedEnqueue(params: {
 
 async function createBillableImageTask(
   params: SubmitBillableImageTaskParams,
+  options?: {
+    initialStatus?: 'STARTED' | 'QUEUED'
+  },
 ): Promise<SubmitBillableImageTaskResult> {
   const normalizedIdempotencyKey = params.idempotencyKey?.trim() || null
+  const initialStatus = options?.initialStatus ?? 'QUEUED'
 
   if (params.model && is2KRenderSize(params.size)) {
     const supports2k = await prisma.imageProvider.count({
@@ -333,15 +337,18 @@ async function createBillableImageTask(
           finalUpstreamApiKind: upstreamApiKindFromReferenceCount(
             params.referenceImages.length,
           ),
-          status: 'QUEUED',
-          statusMessage: '任务已提交，等待 worker 处理',
+          status: initialStatus,
+          statusMessage:
+            initialStatus === 'QUEUED'
+              ? '任务已提交，等待 worker 处理'
+              : '任务已提交，正在执行',
           costFen: params.totalCostFen,
           costStatus: 'CHARGED',
           pricingSku: params.pricingSku,
           unitPriceFen: params.unitPriceFen,
           currency: 'CNY',
           priceVersion: params.priceVersion,
-          queuedAt: new Date(),
+          queuedAt: initialStatus === 'QUEUED' ? new Date() : null,
         },
       })
 
@@ -538,10 +545,17 @@ export async function submitBillableImageTaskAsync(
 export async function submitBillableImageTaskSync(
   params: SubmitBillableImageTaskParams,
 ): Promise<ExecuteSyncBillableImageTaskResult> {
-  const result = await createBillableImageTask({
-    ...params,
-    entryApi: params.entryApi,
-  })
+  const result = await createBillableImageTask(
+    {
+      ...params,
+      entryApi: params.entryApi,
+    },
+    {
+      // Synchronous requests execute in the API request and must be claimable by
+      // executeSyncImageGeneration, which transitions STARTED -> PROCESSING.
+      initialStatus: 'STARTED',
+    },
+  )
 
   const existingTask = await loadTaskWithAssets(result.requestId)
   if (!existingTask) {
