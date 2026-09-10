@@ -106,9 +106,12 @@ export default function ActivityPage() {
     { label: t('taskTabSucceeded'), value: 'SUCCEEDED' },
     { label: t('taskTabFailed'), value: 'FAILED' },
   ]
+  const hasActiveTasks = tasksData?.tasks.some((task) => task.status === 'QUEUED' || task.status === 'PROCESSING') ?? false
 
-  const loadTasks = useCallback(async () => {
-    setTasksLoading(true)
+  const loadTasks = useCallback(async (showLoading = true) => {
+    if (showLoading) {
+      setTasksLoading(true)
+    }
     try {
       const params = new URLSearchParams({ page: String(tasksPage), limit: '20' })
       if (statusFilter !== 'ALL') params.set('status', statusFilter)
@@ -196,6 +199,22 @@ export default function ActivityPage() {
     if (!user) return
     loadUsage()
   }, [user, loadUsage])
+
+  useEffect(() => {
+    if (!user || expandedTaskId) {
+      return
+    }
+
+    const intervalMs = hasActiveTasks ? 5000 : 30000
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadTasks(false)
+      }
+    }, intervalMs)
+
+    return () => window.clearInterval(interval)
+  }, [user, hasActiveTasks, expandedTaskId, loadTasks])
 
   async function toggleTask(task: ActivityTask) {
     const nextExpanded = expandedTaskId === task.id ? null : task.id
