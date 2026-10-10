@@ -6,7 +6,6 @@ import {
   ArrowRight,
   Check,
   Menu,
-  Sparkles,
   Wallet,
   X,
   Zap,
@@ -18,6 +17,7 @@ import {
 } from '@/lib/billing/price-service'
 import { fenToYuan } from '@/lib/money'
 import { fetchCurrentUser, type DashboardUser } from '@/lib/dashboard/auth'
+import { PixionLogo } from '@/components/brand/pixion-logo'
 
 const copy = {
   navHome: '首页',
@@ -180,11 +180,12 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-gray-200/70 bg-white/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 shadow-sm">
-              <Sparkles className="h-4.5 w-4.5 text-white" />
-            </span>
-            <span className="text-lg font-bold tracking-tight">Image Worker</span>
+          <Link href="/" className="flex items-center">
+            <PixionLogo
+              markClassName="h-8 w-8"
+              wordClassName="text-lg font-bold tracking-tight text-gray-900"
+              subtitleClassName="text-xs text-gray-400"
+            />
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm font-medium text-gray-600 md:flex">
@@ -435,14 +436,15 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
       {/* Footer */}
       <footer className="border-t border-gray-200 bg-gray-50">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row sm:px-6">
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-600">
-              <Sparkles className="h-3.5 w-3.5 text-white" />
-            </span>
-            <span className="text-sm font-semibold text-gray-900">Image Worker</span>
+          <div className="flex items-center gap-2.5">
+            <PixionLogo
+              markClassName="h-6 w-6"
+              wordClassName="text-sm font-semibold text-gray-900"
+              subtitleClassName="text-xs text-gray-400"
+            />
             <span className="hidden text-sm text-gray-400 sm:inline">· {copy.footerNote}</span>
           </div>
-          <p className="text-xs text-gray-400">© {new Date().getFullYear()} Image Worker</p>
+          <p className="text-xs text-gray-400">© {new Date().getFullYear()} Pixion</p>
         </div>
       </footer>
     </div>

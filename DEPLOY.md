@@ -3,7 +3,7 @@
 ## 架构：一个项目，两个 Service
 
 ```
-Railway Project: image-worker
+Railway Project: pixion
 ├── Service: web      → Next.js API + Dashboard  (:3001)
 ├── Service: worker   → BullMQ Worker（消费任务）
 ├── Database: PostgreSQL（Railway 内置）
@@ -35,7 +35,7 @@ Railway Project: image-worker
 1. 点进该 Service → **Settings**
 2. **Service Name**: `web`
 3. 确认 **Build** 使用 Nixpacks（默认）
-4. **Networking** → **Generate Domain** → 得到公开地址如 `image-worker-web.up.railway.app`
+4. **Networking** → **Generate Domain** → 得到公开地址如 `pixion-web.up.railway.app`
 
 ### 配置环境变量（web）
 

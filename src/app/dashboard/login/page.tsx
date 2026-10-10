@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useDashboardI18n } from '@/lib/dashboard/i18n'
 import EmailCodeForm from '@/components/auth/email-code-form'
+import { PixionLogo } from '@/components/brand/pixion-logo'
 
 export default function LoginPage() {
   const { t } = useDashboardI18n()
@@ -45,7 +46,13 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">{t('appName')}</h1>
+            <div className="mb-4 flex justify-center">
+              <PixionLogo
+                markClassName="h-11 w-11"
+                wordClassName="text-2xl font-bold text-gray-900"
+                subtitleClassName="text-sm text-gray-400"
+              />
+            </div>
             <p className="text-sm text-gray-500 mt-1">
               {needsVerification ? '完成邮箱验证后即可登录' : t('loginSubtitle')}
             </p>

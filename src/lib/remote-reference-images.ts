@@ -142,7 +142,7 @@ async function fetchRemoteImage(url: URL, redirectCount = 0): Promise<{
       signal: controller.signal,
       headers: {
         Accept: 'image/jpeg,image/png,image/webp',
-        'User-Agent': 'amazon-image-worker/1.0 reference-fetcher',
+        'User-Agent': 'pixion/1.0 reference-fetcher',
       },
     })
 

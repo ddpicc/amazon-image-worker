@@ -1,4 +1,4 @@
-# Image Worker
+# Pixion 派图
 
 独立的图片生成 Worker 服务，配备 Next.js 管理工作台。
 
@@ -59,7 +59,7 @@ npm run db:migrate
 
 ```bash
 # 数据库（独立，非共享）
-DATABASE_URL=postgresql://user:pass@host:5432/image_worker
+DATABASE_URL=postgresql://user:pass@host:5432/pixion
 
 # Redis 队列
 REDIS_URL=redis://localhost:6379

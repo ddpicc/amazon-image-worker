@@ -10,13 +10,13 @@ import {
   Menu,
   Route,
   ShieldCheck,
-  Sparkles,
   Wallet,
   Webhook,
   X,
   Zap,
 } from 'lucide-react'
 import { fetchCurrentUser, type DashboardUser } from '@/lib/dashboard/auth'
+import { PixionLogo } from '@/components/brand/pixion-logo'
 
 const copy = {
   navFeatures: '产品特性',
@@ -30,7 +30,7 @@ const copy = {
   titleA: '一个 API，',
   titleB: '稳定调用多家生图模型',
   subtitle:
-    'Image Worker 提供与 OpenAI 兼容的图片生成与编辑接口，内置多供应商智能路由、失败自动切换与熔断保护。注册即可获取 API Key，按量计费，无最低消费。',
+    'Pixion 派图提供与 OpenAI 兼容的图片生成与编辑接口，内置多供应商智能路由、失败自动切换与熔断保护。注册即可获取 API Key，按量计费，无最低消费。',
   ctaPrimary: '免费注册',
   ctaSecondary: '查看 API 文档',
   trustKey: '注册即取 API Key',
@@ -183,11 +183,12 @@ export default function LandingPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-gray-200/70 bg-white/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 shadow-sm">
-              <Sparkles className="h-4.5 w-4.5 text-white" />
-            </span>
-            <span className="text-lg font-bold tracking-tight">Image Worker</span>
+          <Link href="/" className="flex items-center">
+            <PixionLogo
+              markClassName="h-8 w-8"
+              wordClassName="text-lg font-bold tracking-tight text-gray-900"
+              subtitleClassName="text-xs text-gray-400"
+            />
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm font-medium text-gray-600 md:flex">
@@ -411,14 +412,15 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-gray-200 bg-gray-50">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row sm:px-6">
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-600">
-              <Sparkles className="h-3.5 w-3.5 text-white" />
-            </span>
-            <span className="text-sm font-semibold text-gray-900">Image Worker</span>
+          <div className="flex items-center gap-2.5">
+            <PixionLogo
+              markClassName="h-6 w-6"
+              wordClassName="text-sm font-semibold text-gray-900"
+              subtitleClassName="text-xs text-gray-400"
+            />
             <span className="hidden text-sm text-gray-400 sm:inline">· {t.footerNote}</span>
           </div>
-          <p className="text-xs text-gray-400">© {new Date().getFullYear()} Image Worker</p>
+          <p className="text-xs text-gray-400">© {new Date().getFullYear()} Pixion</p>
         </div>
       </footer>
     </div>

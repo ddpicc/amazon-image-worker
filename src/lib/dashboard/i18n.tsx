@@ -5,7 +5,7 @@ import { createContext, useContext, useMemo } from 'react'
 export type DashboardLanguage = 'zh'
 
 const zh = {
-  appName: 'Image Worker',
+  appName: 'Pixion 派图',
   loading: '加载中...',
   loadingDashboard: '正在加载控制台...',
   signOut: '退出登录',

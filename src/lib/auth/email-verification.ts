@@ -18,9 +18,9 @@ export function isEmailDeliveryConfigured() {
 function verificationEmailHtml(code: string) {
   return `
 <div style="max-width:480px;margin:0 auto;padding:32px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#111827;">
-  <h1 style="font-size:20px;margin:0 0 16px;">Image Worker 邮箱验证</h1>
+  <h1 style="font-size:20px;margin:0 0 16px;">Pixion 派图邮箱验证</h1>
   <p style="font-size:14px;line-height:1.6;color:#374151;margin:0 0 24px;">
-    你正在注册 Image Worker 账号。请使用下面的验证码完成邮箱验证：
+    你正在注册 Pixion 派图账号。请使用下面的验证码完成邮箱验证：
   </p>
   <div style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center;background:#f3f4f6;border-radius:8px;padding:16px 0;margin:0 0 24px;">
     ${code}
@@ -40,7 +40,7 @@ async function sendVerificationEmail(email: string, code: string) {
     return
   }
 
-  const from = process.env.EMAIL_FROM || 'Image Worker <onboarding@resend.dev>'
+  const from = process.env.EMAIL_FROM || 'Pixion 派图 <onboarding@resend.dev>'
   const res = await fetch(RESEND_API_URL, {
     method: 'POST',
     headers: {
@@ -50,7 +50,7 @@ async function sendVerificationEmail(email: string, code: string) {
     body: JSON.stringify({
       from,
       to: [email],
-      subject: `Image Worker 验证码：${code}`,
+      subject: `Pixion 派图验证码：${code}`,
       html: verificationEmailHtml(code),
     }),
   })

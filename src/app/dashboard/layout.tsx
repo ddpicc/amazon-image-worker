@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
 import { fetchCurrentUser, logout, type DashboardUser } from '@/lib/dashboard/auth'
 import { DashboardI18nProvider, roleLabel, useDashboardI18n } from '@/lib/dashboard/i18n'
+import { PixionLogo } from '@/components/brand/pixion-logo'
 
 type NavItem = { href: string; label: string }
 
@@ -94,7 +95,11 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50 lg:flex">
       <header className="sticky top-0 z-30 flex min-h-14 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 shadow-sm lg:hidden">
-        <h1 className="min-w-0 truncate text-base font-bold text-gray-900">{t('appName')}</h1>
+        <PixionLogo
+          markClassName="h-7 w-7"
+          wordClassName="text-base font-bold text-gray-900"
+          subtitleClassName="text-xs text-gray-400"
+        />
         <button
           type="button"
           onClick={() => setMobileNavOpen(true)}
@@ -117,7 +122,11 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           <aside className="relative flex h-dvh w-[min(20rem,calc(100vw-2.5rem))] flex-col overflow-y-auto bg-gray-900 p-4 text-white shadow-2xl">
             <div className="mb-6 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="truncate text-lg font-bold">{t('appName')}</h2>
+                <PixionLogo
+                  markClassName="h-8 w-8"
+                  wordClassName="text-lg font-bold text-white"
+                  subtitleClassName="text-xs text-gray-400"
+                />
                 <p className="mt-2 truncate text-xs text-gray-400">{user.email}</p>
                 <span className="mt-2 inline-flex rounded bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-200">
                   {roleLabel(lang, user.role)}
@@ -161,7 +170,11 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
       <aside className="hidden w-64 shrink-0 bg-gray-900 p-4 text-white lg:block">
         <div className="mb-6">
-          <h1 className="text-lg font-bold">{t('appName')}</h1>
+          <PixionLogo
+            markClassName="h-8 w-8"
+            wordClassName="text-lg font-bold text-white"
+            subtitleClassName="text-xs text-gray-400"
+          />
           <p className="text-xs text-gray-400 mt-2">{user.email}</p>
           <span className="inline-flex mt-2 px-2 py-0.5 rounded text-xs font-medium bg-gray-800 text-gray-200">
             {roleLabel(lang, user.role)}

@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     data: models.map((id) => ({
       id,
       object: 'model',
-      owned_by: 'amazon-image-worker',
+      owned_by: 'pixion',
     })),
   })
 }
