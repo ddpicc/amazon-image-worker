@@ -235,13 +235,18 @@ export async function listPublicPrices(): Promise<PublicPriceRow[]> {
     })
     if (rows.length === 0) return fallback
 
-    return rows.map((row) => ({
-      sku: row.sku as PricingSkuCode,
-      model: row.model,
-      label: row.label,
-      priceFen: row.priceFen,
-      enabled: row.enabled,
-    }))
+    // 只保留至少有一个档位在售（enabled）的模型：整组被暂停（1K/2K 都停用）的模型不再对外展示
+    const activeModels = new Set(rows.filter((row) => row.enabled).map((row) => row.model))
+
+    return rows
+      .filter((row) => activeModels.has(row.model))
+      .map((row) => ({
+        sku: row.sku as PricingSkuCode,
+        model: row.model,
+        label: row.label,
+        priceFen: row.priceFen,
+        enabled: row.enabled,
+      }))
   } catch {
     return fallback
   }

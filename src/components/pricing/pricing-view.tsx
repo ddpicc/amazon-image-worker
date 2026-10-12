@@ -118,7 +118,7 @@ export default function PricingView({ prices }: { prices: PublicPriceRow[] }) {
   }, [prices])
 
   const configuredModelNames = useMemo(
-    () => Array.from(new Set([...models.map((model) => model.name), ...prices.map((row) => row.model)])),
+    () => Array.from(new Set(prices.map((row) => row.model))),
     [prices],
   )
 
