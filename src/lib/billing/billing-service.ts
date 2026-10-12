@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db/prisma'
+import { Prisma } from '@prisma/client'
 import { fenToYuan, yuanToFen } from '@/lib/money'
 
 export interface BalanceCheckResult {
@@ -111,6 +112,80 @@ export async function adjustBalance(
   })
 
   return { newBalance: fenToYuan(result.balanceFen) }
+}
+
+/**
+ * New-user signup bonus, in fen. 0.2 元 = 20 fen by default.
+ * Override with SIGNUP_BONUS_FEN; set to 0 to disable.
+ */
+export const DEFAULT_SIGNUP_BONUS_FEN = 20
+
+export function getSignupBonusFen(): number {
+  const raw = process.env.SIGNUP_BONUS_FEN
+  if (raw === undefined || raw.trim() === '') {
+    return DEFAULT_SIGNUP_BONUS_FEN
+  }
+
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    console.warn('[billing] SIGNUP_BONUS_FEN 取值无效，回退到默认值', { raw })
+    return DEFAULT_SIGNUP_BONUS_FEN
+  }
+
+  return parsed
+}
+
+/**
+ * Grants the signup bonus to a newly registered user exactly once.
+ * Idempotent: guarded by a unique balance-log key per user, so retries
+ * (e.g. repeated email verification) never double-credit.
+ */
+export async function grantSignupBonus(
+  userId: string,
+): Promise<{ granted: boolean; amountFen: number }> {
+  const amountFen = getSignupBonusFen()
+  if (amountFen <= 0) {
+    return { granted: false, amountFen: 0 }
+  }
+
+  const idempotencyKey = `signup-bonus:${userId}`
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const existing = await tx.balanceLog.findUnique({
+        where: { idempotencyKey },
+        select: { id: true },
+      })
+      if (existing) {
+        return { granted: false, amountFen }
+      }
+
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: { balanceFen: { increment: amountFen } },
+        select: { balanceFen: true },
+      })
+
+      await tx.balanceLog.create({
+        data: {
+          userId,
+          amountFen,
+          balanceAfterFen: updated.balanceFen,
+          status: 'SIGNUP_BONUS',
+          reason: '新用户注册赠送',
+          idempotencyKey,
+        },
+      })
+
+      return { granted: true, amountFen }
+    })
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      // 并发下另一个请求已经发放，视为成功幂等
+      return { granted: false, amountFen }
+    }
+    throw error
+  }
 }
 
 export async function getUserBalance(userId: string): Promise<number> {

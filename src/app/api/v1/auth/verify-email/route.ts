@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db/prisma'
 import { createSession, getSessionCookieOptions, SESSION_COOKIE_NAME } from '@/lib/auth/session'
 import { enforceRateLimit, getClientIp } from '@/lib/rate-limit'
 import { verifyEmailCode } from '@/lib/auth/email-verification'
+import { grantSignupBonus } from '@/lib/billing/billing-service'
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,6 +44,18 @@ export async function POST(request: NextRequest) {
       where: { id: user.id },
       data: { emailVerifiedAt: new Date() },
     })
+
+    // 新注册用户完成邮箱验证后，赠送试用余额（幂等，重复验证不会重复发放）
+    if (user.role === 'USER') {
+      try {
+        await grantSignupBonus(user.id)
+      } catch (error) {
+        console.error('[auth.verify-email] 发放注册赠送失败', {
+          userId: user.id,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
 
     const { token } = await createSession(user.id)
     const response = NextResponse.json({

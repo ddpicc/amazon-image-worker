@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { fetchCurrentUser, type DashboardUser } from '@/lib/dashboard/auth'
 import { PixionLogo } from '@/components/brand/pixion-logo'
+import { SIGNUP_BONUS_AMOUNT_LABEL } from '@/lib/billing/signup-bonus-copy'
 
 const copy = {
   navFeatures: '产品特性',
@@ -34,6 +35,7 @@ const copy = {
   ctaPrimary: '免费注册',
   ctaSecondary: '查看 API 文档',
   trustKey: '注册即取 API Key',
+  trustBonus: `注册送 ${SIGNUP_BONUS_AMOUNT_LABEL} 试用金`,
   trustSdk: '兼容 OpenAI SDK',
   trustBilling: '按任务计费',
   codeTitle: '提交一个异步生图任务',
@@ -63,7 +65,7 @@ const copy = {
   how3Title: '获取生成结果',
   how3Desc: '同步接口直接返回图片，异步任务通过回调或轮询领取。',
   ctaTitle: '准备好生成第一张图了吗？',
-  ctaSubtitle: '注册即取 API Key，一分钟内生成你的第一张图片。',
+  ctaSubtitle: `注册即送 ${SIGNUP_BONUS_AMOUNT_LABEL} 试用金，一分钟内生成你的第一张图片。`,
   ctaButton: '免费注册',
   ctaSecondaryButton: '登录控制台',
   footerNote: 'OpenAI 兼容的图片生成 API，内置多供应商智能路由。',
@@ -266,7 +268,7 @@ export default function LandingPage() {
               </Link>
             </div>
             <ul className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-500">
-              {[t.trustKey, t.trustSdk, t.trustBilling].map((item) => (
+              {[t.trustKey, t.trustBonus, t.trustSdk, t.trustBilling].map((item) => (
                 <li key={item} className="inline-flex items-center gap-1.5">
                   <Check className="h-4 w-4 text-blue-600" />
                   {item}

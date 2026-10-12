@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useDashboardI18n } from '@/lib/dashboard/i18n'
 import EmailCodeForm from '@/components/auth/email-code-form'
+import { SIGNUP_BONUS_BLURB } from '@/lib/billing/signup-bonus-copy'
 
 export default function RegisterPage() {
   const { t } = useDashboardI18n()
@@ -48,6 +49,12 @@ export default function RegisterPage() {
             <p className="text-sm text-gray-500 mt-1">
               {pendingEmail ? '输入邮件中的验证码完成注册' : t('registerSubtitle')}
             </p>
+            {!pendingEmail && (
+              <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {SIGNUP_BONUS_BLURB}
+              </p>
+            )}
           </div>
 
           {pendingEmail ? (
