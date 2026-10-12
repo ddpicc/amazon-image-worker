@@ -23,6 +23,7 @@ const zh = {
   navTasks: '任务',
   navStatistics: '统计',
   navPricing: '定价',
+  navPriceList: '价格',
   navBilling: '账单',
   navPayments: '支付',
   navDebug: '调试',
